@@ -1,8 +1,8 @@
 /**
- * Device API v3 的 wire 类型。
+ * Device API v4 的 wire 类型。
  *
  * 这些类型描述 Conductor 已经交付的契约，不描述 Echo 想要的形状：
- * 字段名、可空性和 discriminator 都按 `ylx-device-v3.openapi.yaml` 与真机
+ * 字段名、可空性和 discriminator 都按 `ylx-device-v4.openapi.yaml` 与真机
  * 响应逐字对应。任何看起来更方便的重命名都会在 dual-read 时咬人。
  */
 
@@ -300,9 +300,25 @@ export interface NetworkStatus {
   devices: Array<{ interface: string; type: string; state: string }>;
 }
 
+export type CaptureStateEventState =
+  | "recording"
+  | "finalizing"
+  | "encoding"
+  | "verifying"
+  | "recoverable"
+  | "failed"
+  | "abandoned";
+
+export interface CaptureStateEventPayload {
+  schema: "ylx.capture-state-event.v2";
+  state: CaptureStateEventState;
+  volume_id: string;
+  generation_id: string;
+}
+
 export type CaptureEvent = {
-  schema: "ylx.capture-event.v3";
-  type: "snapshot" | "progress" | "diagnostic" | "safe_swap";
+  schema: "ylx.capture-event.v4";
+  type: "snapshot" | "progress" | "diagnostic" | "safe_swap" | "state";
   sse_delivery_id: string;
   authority_epoch: string;
   source_revision: number;

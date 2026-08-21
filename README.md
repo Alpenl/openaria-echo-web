@@ -8,7 +8,7 @@ Echo / Web 可独立构建。构建产物是一组静态制品，由 **Conductor
 
 - 设备状态、会话生命周期与所有可变设备资源的唯一权威是 Conductor 的 capture daemon。
 - 本客户端只投影 daemon 的权威快照，不产生任何本地乐观状态；浏览器状态永远不是恢复依据。
-- 页面通过 Device API v3 的 `/api/v3` 与设备通信：HTTP 快照、SSE 事件流、JPEG 预览、
+- 页面通过 Device API v4 的 `/api/v4` 与设备通信：HTTP 快照、SSE 事件流、JPEG 预览、
   以及不可变快照的 Range 数据面。
 
 ## 构建
@@ -62,7 +62,7 @@ ECHO_DEVICE=http://<设备地址>:8080 npm run dev  # 设备接在别的网络�
 
 ```
 src/
-  api/      Device API v3 的类型、客户端、SSE 事件流与预览传输
+  api/      Device API v4 的类型、客户端、SSE 事件流与预览传输
   state/    权威快照的 reducer 与编排 store（幂等命令、回执校验、事件流快路径）
   ui/       取景器、命令条、会话台账与详情、设备面板
   styles/   单一样式表与设计令牌

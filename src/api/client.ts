@@ -8,7 +8,24 @@ import type {
   UnsuccessfulOutcome,
 } from "./types";
 
-const API_ROOT = "/api/v3";
+export const API_ROOT = "/api/v4";
+export const DEVICE_API_CONSUMER_SUPPORT = {
+  schema: "ylx.device-api-consumer-support.v1",
+  consumer: "openaria-echo-web",
+  supported_device_api_majors: [4],
+  unknown_major_policy: "fail_closed",
+  required_contracts: [
+    {
+      major: 4,
+      path: "openapi/ylx-device-v4.openapi.yaml",
+      sha256: "bc41fd6716290d9dfc1ed2a1129f2cdf7b8347ed83ee37d2e9ba2020131ba9a8",
+      bytes: 68751,
+      info_version: "4.0.0",
+      server_base_path: API_ROOT,
+      lifecycle: "current",
+    },
+  ],
+} as const;
 const TOKEN_KEY = "rp-ylx-access-token";
 
 export class DeviceApiError extends Error {
@@ -28,6 +45,51 @@ export class DeviceApiError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+function deviceApiMajor(apiVersion: unknown): number | null {
+  if (typeof apiVersion !== "string") {
+    return null;
+  }
+  const match = apiVersion.match(/^(\d+)(?:\.|$)/);
+  return match ? Number(match[1]) : null;
+}
+
+function assertSupportedDevice(device: DeviceDescriptor): DeviceDescriptor {
+  const major = deviceApiMajor(device.api_version);
+  if (
+    major === null ||
+    !(DEVICE_API_CONSUMER_SUPPORT.supported_device_api_majors as readonly number[]).includes(
+      major,
+    ) ||
+    device.schema !== "ylx.device.v4"
+  ) {
+    throw new DeviceApiError("不支持的 Device API major", 426, "unsupported_device_api_major", {
+      api_version: device.api_version ?? null,
+      schema: device.schema ?? null,
+      supported_device_api_majors: [...DEVICE_API_CONSUMER_SUPPORT.supported_device_api_majors],
+    });
+  }
+  return device;
+}
+
+function assertCaptureStatus<T extends CaptureStatus | null>(capture: T): T {
+  if (
+    capture &&
+    (capture.schema !== "ylx.capture-status.v4" ||
+      capture.snapshot.schema !== "ylx.capture-snapshot-event.v4")
+  ) {
+    throw new DeviceApiError(
+      "不支持的 Device API capture status schema",
+      502,
+      "unsupported_device_api_schema",
+      {
+        schema: capture.schema,
+        snapshot_schema: capture.snapshot.schema,
+      },
+    );
+  }
+  return capture;
 }
 
 export async function makeApiError(response: Response): Promise<DeviceApiError> {
@@ -166,8 +228,8 @@ export interface ListSessionsQuery {
 }
 
 export const deviceApi = {
-  getDevice: () => requestJson<DeviceDescriptor>("/device"),
-  getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status"),
+  getDevice: () => requestJson<DeviceDescriptor>("/device").then(assertSupportedDevice),
+  getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status").then(assertCaptureStatus),
   getSafeSwap: () =>
     requestOptionalJson<{ schema: string; receipt: unknown }>("/capture/safe-swap"),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),
@@ -200,12 +262,12 @@ export const deviceApi = {
         display_name: displayName,
         take: { kind: "new" },
       }),
-    ),
+    ).then(assertCaptureStatus),
   stopCapture: (reason: "user" | "safe_swap") =>
     requestJson<CaptureStatus>(
       "/capture/stop",
       commandInit({ schema: "ylx.capture-stop.v2", reason }),
-    ),
+    ).then(assertCaptureStatus),
   setCameraFocus: (request: { value?: number; auto_enabled?: boolean }) =>
     requestJson<CameraFocusStatus>(
       "/camera/focus",
