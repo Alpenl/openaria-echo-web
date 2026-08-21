@@ -33,6 +33,7 @@
   --permit: #46c98a;
   --live: #7fe3f5;
   --link: #8ec5ff;
+  --peak: #e858ff;
   --focus-ring: #8fd4ff;
 
   --hatch: repeating-linear-gradient(45deg, transparent 0 5px, rgba(255, 59, 45, 0.2) 5px 10px);
@@ -165,7 +166,8 @@ a:hover {
   background: var(--void);
 }
 
-.frame img {
+.frame img,
+.frame canvas {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -175,23 +177,34 @@ a:hover {
   object-fit: contain;
 }
 
+.frame canvas {
+  z-index: 1;
+  pointer-events: none;
+}
+
 /* 单眼取景把 32:9 并置画面放大到两倍宽再平移，露出指定的一只眼。 */
 .frame[data-inspect="left"] img,
-.frame[data-inspect="right"] img {
+.frame[data-inspect="right"] img,
+.frame[data-inspect="left"] canvas,
+.frame[data-inspect="right"] canvas {
   width: 200%;
   object-fit: cover;
 }
 
-.frame[data-inspect="left"] img {
+.frame[data-inspect="left"] img,
+.frame[data-inspect="left"] canvas {
   transform: translate(-25%, -50%);
 }
 
-.frame[data-inspect="right"] img {
+.frame[data-inspect="right"] img,
+.frame[data-inspect="right"] canvas {
   transform: translate(-75%, -50%);
 }
 
 .frame[data-full="true"][data-inspect="left"] img,
-.frame[data-full="true"][data-inspect="right"] img {
+.frame[data-full="true"][data-inspect="right"] img,
+.frame[data-full="true"][data-inspect="left"] canvas,
+.frame[data-full="true"][data-inspect="right"] canvas {
   object-fit: contain;
 }
 
@@ -530,6 +543,63 @@ a:hover {
   background: var(--ink);
   color: #080a0b;
   font-weight: 600;
+}
+
+.focus-peaking-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(244px, calc(100vw - 32px));
+  padding: 8px;
+  background: var(--glass);
+  border: 1px solid var(--hairline-2);
+  border-radius: 3px;
+  backdrop-filter: blur(12px);
+}
+
+.focus-peaking-control button {
+  flex: none;
+  width: 60px;
+  min-height: 36px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--hairline-2);
+  border-radius: 2px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.focus-peaking-control button[aria-checked="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #080a0b;
+  font-weight: 700;
+}
+
+.focus-peaking-control button:disabled {
+  color: var(--ink-3);
+  border-color: var(--hairline);
+  cursor: not-allowed;
+}
+
+.focus-peaking-control input {
+  width: 112px;
+  min-width: 0;
+  accent-color: var(--peak);
+}
+
+.focus-peaking-control input:disabled {
+  opacity: 0.45;
+}
+
+.focus-peaking-control output {
+  width: 3ch;
+  flex: none;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: right;
 }
 
 .overlay-card {
@@ -1250,6 +1320,15 @@ a:hover {
 
   .topbar .brand + .state-chip {
     margin-right: auto;
+  }
+
+  .focus-peaking-control {
+    gap: 6px;
+    max-width: calc(100vw - 24px);
+  }
+
+  .focus-peaking-control input {
+    width: 96px;
   }
 
   .topbar-facts {
