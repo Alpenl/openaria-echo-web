@@ -1,0 +1,23 @@
+{
+  "name": "openaria-echo-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Open Aria Echo / Web — browser client for Open Aria Conductor",
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/manifest.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "preact": "^10.27.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
