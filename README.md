@@ -49,9 +49,12 @@ default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'
 ## 开发
 
 ```bash
-npm run dev                                   # 默认代理到 http://192.168.110.36:8080
-ECHO_DEVICE=http://<设备地址>:8080 npm run dev  # 指向别的设备
+npm run dev                                   # 默认代理到设备热点网关 http://10.42.0.1:8080
+ECHO_DEVICE=http://<设备地址>:8080 npm run dev  # 设备接在别的网络上时覆盖
 ```
+
+默认值是设备自身热点的网关地址：连上设备热点就能直接开发。**不要把具体环境的地址提交进仓库**——
+用 `ECHO_DEVICE` 覆盖。
 
 `/api` 被代理到真机，因此开发时消费的是真实 Device API，前端不维护第二套契约实现。
 

@@ -18,7 +18,9 @@ function stripCrossOrigin(): Plugin {
  * 固定的三件套 index.html / app.js / styles.css，没有内联脚本、内联样式、
  * hash 文件名、代码分割或 modulepreload polyfill。
  */
-const DEVICE = process.env.ECHO_DEVICE ?? "http://192.168.110.36:8080";
+// 默认指向设备自身热点的网关地址（NET-01 冻结的 10.42.0.1/24）：连上设备热点即可开发。
+// 设备接在别的网络上时用 ECHO_DEVICE 覆盖，不要把具体环境的地址写进仓库。
+const DEVICE = process.env.ECHO_DEVICE ?? "http://10.42.0.1:8080";
 
 export default defineConfig({
   base: "/",
