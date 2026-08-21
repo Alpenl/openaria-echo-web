@@ -18,8 +18,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "bc41fd6716290d9dfc1ed2a1129f2cdf7b8347ed83ee37d2e9ba2020131ba9a8",
-      bytes: 68751,
+      sha256: "6740c9875ee6dcf1564062b3b7e63d995d4c01cdd1e3fadcc49bd54b13ffc899",
+      bytes: 75767,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -227,7 +227,7 @@ export interface ListSessionsQuery {
   cursor?: string | null;
 }
 
-export const deviceApi = {
+export const deviceApi = Object.freeze({
   getDevice: () => requestJson<DeviceDescriptor>("/device").then(assertSupportedDevice),
   getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status").then(assertCaptureStatus),
   getSafeSwap: () =>
@@ -275,7 +275,7 @@ export const deviceApi = {
     ),
   setNetwork: (request: Record<string, unknown>) =>
     requestJson<unknown>("/network", commandInit({ schema: "ylx.network-apply.v1", ...request })),
-};
+});
 
 export async function getLatestPreview(signal: AbortSignal): Promise<Blob> {
   const response = await fetch(`${API_ROOT}/preview`, {

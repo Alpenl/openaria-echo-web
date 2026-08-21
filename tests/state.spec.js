@@ -15,8 +15,8 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "bc41fd6716290d9dfc1ed2a1129f2cdf7b8347ed83ee37d2e9ba2020131ba9a8",
-    bytes: 68751,
+    sha256: "6740c9875ee6dcf1564062b3b7e63d995d4c01cdd1e3fadcc49bd54b13ffc899",
+    bytes: 75767,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",
@@ -35,6 +35,121 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   expect(deviceApi.artifactUrl("session", "artifact")).toBe(
     "/api/v4/sessions/session/artifacts/artifact",
   );
+});
+
+const replacementFocus = {
+  schema: "ylx.camera-focus.v1",
+  value: 0,
+  minimum: 0,
+  maximum: 255,
+  step: 1,
+  default: 32,
+  auto_supported: true,
+  auto_enabled: false,
+};
+
+test("deviceApi public export is runtime immutable", () => {
+  const originalGetCameraFocus = deviceApi.getCameraFocus;
+  const originalSetCameraFocus = deviceApi.setCameraFocus;
+  const replacementGetCameraFocus = async () => replacementFocus;
+  const replacementSetCameraFocus = async () => replacementFocus;
+
+  const expectFocusMethodsIntact = () => {
+    expect(deviceApi.getCameraFocus).toBe(originalGetCameraFocus);
+    expect(deviceApi.setCameraFocus).toBe(originalSetCameraFocus);
+  };
+
+  try {
+    expect(Object.isFrozen(deviceApi)).toBe(true);
+
+    expect(() => {
+      deviceApi.getCameraFocus = replacementGetCameraFocus;
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+
+    expect(() => {
+      deviceApi.setCameraFocus = replacementSetCameraFocus;
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+
+    expect(() => {
+      Object.defineProperty(deviceApi, "getCameraFocus", { value: replacementGetCameraFocus });
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+
+    expect(() => {
+      Object.defineProperty(deviceApi, "setCameraFocus", { value: replacementSetCameraFocus });
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+
+    expect(() => {
+      Object.assign(deviceApi, {
+        getCameraFocus: replacementGetCameraFocus,
+        setCameraFocus: replacementSetCameraFocus,
+      });
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+
+    expect(() => {
+      delete deviceApi.getCameraFocus;
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+
+    expect(() => {
+      delete deviceApi.setCameraFocus;
+    }).toThrow(TypeError);
+    expectFocusMethodsIntact();
+  } finally {
+    if (!Object.isFrozen(deviceApi)) {
+      Object.defineProperties(deviceApi, {
+        getCameraFocus: {
+          configurable: true,
+          enumerable: true,
+          value: originalGetCameraFocus,
+          writable: true,
+        },
+        setCameraFocus: {
+          configurable: true,
+          enumerable: true,
+          value: originalSetCameraFocus,
+          writable: true,
+        },
+      });
+    }
+  }
+});
+
+test("deviceApi camera focus methods still use the v4 focus route", async () => {
+  const originalFetch = globalThis.fetch;
+  /** @type {Array<{url: string, method: string, body: unknown}>} */
+  const requests = [];
+  globalThis.fetch = async (input, init = {}) => {
+    requests.push({
+      url: String(input),
+      method: init.method ?? "GET",
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    return new Response(JSON.stringify(replacementFocus), {
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      status: 200,
+    });
+  };
+
+  try {
+    await expect(deviceApi.getCameraFocus()).resolves.toEqual(replacementFocus);
+    await expect(deviceApi.setCameraFocus({ value: 64 })).resolves.toEqual(replacementFocus);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  expect(requests).toEqual([
+    { url: "/api/v4/camera/focus", method: "GET", body: null },
+    {
+      url: "/api/v4/camera/focus",
+      method: "POST",
+      body: { schema: "ylx.camera-focus-set.v1", value: 64 },
+    },
+  ]);
 });
 
 /** @param {number} sourceRevision @param {string} deviceState */
