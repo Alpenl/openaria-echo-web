@@ -1,13 +1,13 @@
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
-import { formatBytes, formatCelsius, connectionMethodLabel, deviceStateLabel } from "./format";
+import {
+  CONNECTION_LABELS,
+  connectionMethodLabel,
+  deviceStateLabel,
+  formatCelsius,
+  formatGiB,
+} from "./format";
 import { DeviceIcon, SessionsIcon } from "./icons";
-
-const CONNECTION_LABELS: Record<AppState["connection"], string> = {
-  connecting: "正在连接",
-  connected: "事件流已连接",
-  disconnected: "事件流断开",
-};
 
 export function TopBar({ state }: { state: AppState }) {
   const snapshot = state.capture?.snapshot;
@@ -20,6 +20,7 @@ export function TopBar({ state }: { state: AppState }) {
   return (
     <header class="topbar">
       <div class="brand">
+        <h1 class="visually-hidden">Open Aria Echo</h1>
         <span class="brand-mark" aria-hidden="true" />
         <span class="brand-label">{state.device?.device.device_label ?? "Open Aria Echo"}</span>
       </div>
@@ -31,10 +32,10 @@ export function TopBar({ state }: { state: AppState }) {
       <div class="topbar-facts">
         <span>
           <span data-testid="storage-available">
-            {storage ? formatBytes(storage.available_bytes) : "--"}
+            {storage ? formatGiB(storage.available_bytes) : "--"}
           </span>{" "}
           <span data-testid="storage-writable">
-            {storage ? (storage.writable ? "可写" : "只读") : "--"}
+            {storage ? (storage.writable ? "可写" : "不可写") : "--"}
           </span>
         </span>
         <span data-testid="temperature">{formatCelsius(runtime?.temperature_celsius)}</span>
@@ -47,10 +48,10 @@ export function TopBar({ state }: { state: AppState }) {
           data-state={released ? "released" : "held"}
           style={released ? "color:var(--permit);border-color:var(--permit)" : undefined}
         >
-          {released ? "可以移除" : "使用中"}
+          {released ? "可移除" : "使用中"}
         </span>
-        <output class="link-dot" data-state={state.connection} aria-live="polite">
-          {CONNECTION_LABELS[state.connection]}
+        <output class="connection link-dot" data-state={state.connection} aria-live="polite">
+          {CONNECTION_LABELS[state.connection] ?? state.connection}
         </output>
       </div>
 

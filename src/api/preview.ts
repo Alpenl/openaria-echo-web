@@ -1,6 +1,6 @@
 import { DeviceApiError, getLatestPreview, waitForAbortableDelay } from "./client";
 
-export type PreviewState = "live" | "waiting" | "unavailable";
+export type PreviewState = "waiting" | "live" | "unavailable";
 
 export interface FollowLatestPreviewOptions {
   signal: AbortSignal;
@@ -30,11 +30,12 @@ export async function followLatestPreview(options: FollowLatestPreviewOptions): 
         if (options.signal.aborted) {
           return;
         }
+        // 空闲时没有可用帧是正常的：界面照说「画面暂不可用」，但不往控制台刷噪音。
         const expectedIdle =
           error instanceof DeviceApiError &&
           error.status === 503 &&
           error.code === "preview_unavailable";
-        options.onState(expectedIdle ? "waiting" : "unavailable");
+        options.onState("unavailable");
         if (!expectedIdle) {
           console.warn(error);
         }

@@ -279,6 +279,15 @@ export interface UnsuccessfulOutcome {
   [key: string]: unknown;
 }
 
+export interface NetworkApplyResult {
+  format?: "ylx.network-result.v0";
+  ok: boolean;
+  request_id?: string;
+  mode?: string;
+  replayed?: boolean;
+  [key: string]: unknown;
+}
+
 export interface NetworkStatus {
   format: "ylx.network-status.v0";
   capabilities: {

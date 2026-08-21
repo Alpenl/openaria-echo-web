@@ -5,3 +5,5 @@ dist/
 build/
 target/
 .env
+test-results/
+playwright-report/

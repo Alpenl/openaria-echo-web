@@ -74,13 +74,13 @@ export function StageOverlays({ state }: { state: AppState }) {
         <div class="imu-row">
           <dt>a</dt>
           <dd data-testid="acceleration" data-available={String(Boolean(imu))}>
-            {imu ? formatVector(imu.raw.accelerometer) : "不可用"}
+            {imu ? formatVector(imu.raw.accelerometer, "raw") : "不可用"}
           </dd>
         </div>
         <div class="imu-row">
           <dt>ω</dt>
           <dd data-testid="angular-velocity" data-available={String(Boolean(imu))}>
-            {imu ? formatVector(imu.raw.gyroscope) : "不可用"}
+            {imu ? formatVector(imu.raw.gyroscope, "raw") : "不可用"}
           </dd>
         </div>
         <div class="imu-row">

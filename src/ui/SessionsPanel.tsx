@@ -1,7 +1,7 @@
 import type { AppState, SessionFilter } from "../state/reducer";
 import { store } from "../state/store";
 import type { SessionSummary } from "../api/types";
-import { formatBytes, formatSeconds } from "./format";
+import { formatGiB, formatSeconds, verdictLabel } from "./format";
 import { CloseIcon, SearchIcon } from "./icons";
 import { SessionDetail } from "./SessionDetail";
 
@@ -16,20 +16,6 @@ function verdictOf(session: SessionSummary): "usable" | "unusable" | "unknown" {
     return "unknown";
   }
   return session.verification?.verdict ?? "unknown";
-}
-
-function verdictLabel(session: SessionSummary): string {
-  if (session.producer_outcome !== "sealed") {
-    return session.producer_outcome;
-  }
-  const verdict = session.verification?.verdict;
-  if (verdict === "usable") {
-    return "已验证可用";
-  }
-  if (verdict === "unusable") {
-    return "判为不可用";
-  }
-  return "尚未校验";
 }
 
 function matches(session: SessionSummary, query: string, filter: SessionFilter): boolean {
@@ -106,15 +92,6 @@ export function SessionsPanel({ state }: { state: AppState }) {
       </div>
 
       <div class="panel-body">
-        {diagnostics.length > 0
-          ? diagnostics.map((diagnostic) => (
-              <div class="alert" key={diagnostic.quarantine_id}>
-                <code>{diagnostic.code}</code>
-                <span>{diagnostic.message}</span>
-              </div>
-            ))
-          : null}
-
         {visible.map((session) => (
           <button
             key={session.session_id}
@@ -124,24 +101,36 @@ export function SessionsPanel({ state }: { state: AppState }) {
             data-outcome={session.producer_outcome === "sealed" ? "sealed" : "unsuccessful"}
             onClick={() => void store.openSession(session.session_id, session.producer_outcome)}
           >
-            <span class="session-name">{session.display_name}</span>
+            <span class="session-head">
+              <span class="session-name">{session.display_name}</span>
+              {/* 生产方声明与消费方判断分开投影，绝不合并成一个「状态」。 */}
+              <span class="verdict" data-verdict={verdictOf(session)}>
+                {verdictLabel(session.verification?.verdict)}
+              </span>
+            </span>
             <span class="session-meta">
               <span>{formatSeconds(session.duration_seconds)}</span>
-              <span>·</span>
-              <span>{formatBytes(session.total_bytes)}</span>
-              <span class="verdict" data-verdict={verdictOf(session)}>
-                {verdictLabel(session)}
+              <span>{formatGiB(session.total_bytes)}</span>
+              <span class="producer">
+                {session.producer_outcome === "sealed" ? "已封存" : session.producer_outcome}
               </span>
+              <code class="session-uuid">{session.session_id}</code>
             </span>
           </button>
         ))}
 
-        {visible.length === 0 && loadedOnce && !loading ? (
+        {diagnostics.map((diagnostic) => (
+          <p class="discovery-diagnostic" key={`msg-${diagnostic.quarantine_id}`} title={diagnostic.code}>
+            {diagnostic.message}
+          </p>
+        ))}
+
+        {visible.length === 0 && loadedOnce && !loading && diagnostics.length === 0 ? (
           <p class="panel-empty">
-            {items.length === 0 ? "设备上还没有会话" : "没有匹配当前搜索或筛选的会话"}
+            {items.length === 0 ? "暂无会话" : "没有匹配当前搜索或筛选的会话"}
           </p>
         ) : null}
-        {!loadedOnce && loading ? <p class="panel-empty">正在读取会话台账</p> : null}
+        {!loadedOnce ? <p class="panel-empty">会话列表尚未加载</p> : null}
 
         {nextCursor ? (
           <button

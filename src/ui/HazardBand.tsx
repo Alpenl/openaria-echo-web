@@ -1,13 +1,5 @@
 import type { AppState } from "../state/reducer";
-import { formatTimeOfDay } from "./format";
-
-const OUTCOME_LABELS: Record<string, string> = {
-  recoverable: "可评估残留",
-  failed: "已失败",
-  abandoned: "已放弃",
-  media_lost: "介质丢失",
-  blocked: "受阻",
-};
+import { OUTCOME_LABELS, releaseStateLabel } from "./format";
 
 /**
  * 危险带投影权威快照里的持久状态，不是事件流：它永远不用 role="alert"，
@@ -36,26 +28,53 @@ export function HazardBand({ state }: { state: AppState }) {
 
 export function Alerts({ state }: { state: AppState }) {
   if (state.diagnostics.length === 0 && !state.error) {
-    return <div class="alerts" aria-live="assertive" aria-atomic="true" />;
+    return <div class="alerts" />;
   }
   return (
-    <div class="alerts" aria-live="assertive" aria-atomic="true">
+    <div class="alerts">
       {state.error ? (
-        <div class="alert">
+        <div class="alert" role="alert">
           <code>{state.error.code}</code>
           <span>{state.error.message}</span>
         </div>
       ) : null}
       {state.diagnostics.map((diagnostic) => (
-        <div class="alert" key={`${diagnostic.code}|${diagnostic.at}`}>
+        <div class="alert" role="alert" key={`${diagnostic.code}|${diagnostic.at}`}>
           <code>{diagnostic.code}</code>
           <span>{diagnostic.message}</span>
           <span class="tag" data-recoverable={String(diagnostic.recoverable)}>
             {diagnostic.recoverable ? "recoverable" : "not recoverable"}
           </span>
-          <time dateTime={diagnostic.at}>{formatTimeOfDay(diagnostic.at)}</time>
+          {/* 诊断 details 原样呈现：设备说了什么就显示什么，不做二次解读。 */}
+          {diagnostic.details && Object.keys(diagnostic.details).length > 0 ? (
+            <pre>{JSON.stringify(diagnostic.details)}</pre>
+          ) : null}
+          <time dateTime={diagnostic.at}>{diagnostic.at}</time>
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * 介质许可带：只有通过七项校验的 typed receipt 才会让它出现。
+ * 它和危险带一样是顶层持久状态，不能藏进面板——操作者要在拔盘前一眼看到。
+ */
+export function PermitBand({ state }: { state: AppState }) {
+  const receipt = state.safeSwapReceipt?.receipt;
+  if (!receipt) {
+    return null;
+  }
+  return (
+    <section class="permit" role="status" aria-label="介质释放">
+      <span class="permit-mark" aria-hidden="true" />
+      <strong>可以移除存储设备</strong>
+      <span class="tag" data-testid="safe-swap-release">
+        {releaseStateLabel(receipt.release_state)}
+      </span>
+      <code class="hazard-session" data-testid="safe-swap-session">
+        {receipt.session_id}
+      </code>
+    </section>
   );
 }

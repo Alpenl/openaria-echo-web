@@ -391,10 +391,46 @@ a:hover {
   word-break: break-all;
 }
 
+/* 介质许可带：permit 绿的两个合法出现位置之一，只由 typed receipt 驱动。 */
+.permit {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--glass-strong);
+  border-top: 1px solid var(--permit);
+  border-bottom: 1px solid var(--permit);
+  backdrop-filter: blur(12px);
+}
+
+.permit-mark {
+  width: 12px;
+  height: 20px;
+  flex: none;
+  background: var(--permit);
+}
+
+.permit .tag {
+  color: var(--permit);
+  border-color: var(--permit);
+}
+
 .alerts {
   flex: none;
   display: flex;
   flex-direction: column;
+}
+
+.alert pre {
+  flex: 1 1 100%;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .alerts:empty {
@@ -560,6 +596,14 @@ a:hover {
   border-top: 1px solid var(--hairline);
 }
 
+.command-form {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .shutter {
   display: inline-flex;
   align-items: center;
@@ -664,6 +708,7 @@ a:hover {
   font-family: var(--mono);
   font-size: 17px;
   color: var(--live);
+  white-space: nowrap;
 }
 
 .readout dd[data-idle="true"] {
@@ -841,6 +886,35 @@ a:hover {
   background-image: var(--hatch-caution);
 }
 
+.session-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session-head .session-name {
+  flex: 1 1 auto;
+}
+
+.session-meta .producer {
+  color: var(--ink-2);
+}
+
+.session-meta .session-uuid {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.discovery-diagnostic {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background-image: var(--hatch-caution);
+  color: var(--ink);
+  font-size: 13px;
+  text-wrap: pretty;
+}
+
 .session-name {
   font-size: 14px;
   white-space: nowrap;
@@ -852,13 +926,14 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   font-family: var(--mono);
   font-size: 12px;
   color: var(--ink-3);
 }
 
 .verdict {
-  margin-left: auto;
+  flex: none;
   font-family: var(--sans);
   font-size: 12px;
   white-space: nowrap;
@@ -1016,6 +1091,102 @@ a:hover {
   pointer-events: none;
 }
 
+/* -------------------------------------------------------------- 面板表单 */
+
+.panel-note {
+  font-size: 12px;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.network-form,
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.network-form input[type="text"],
+.network-form input[type="password"] {
+  height: 40px;
+  padding: 0 11px;
+  background: var(--sunken);
+  color: var(--ink);
+  border: 1px solid var(--hairline-2);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.network-form input:disabled {
+  color: var(--ink-3);
+  border-color: var(--hairline);
+}
+
+.network-form input[type="range"] {
+  width: 100%;
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.segmented legend {
+  padding: 0 0 8px 0;
+}
+
+.segmented label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.segmented label:has(input:checked) {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #080a0b;
+  font-weight: 500;
+}
+
+.segmented input {
+  accent-color: var(--ink);
+  margin: 0;
+}
+
+.segmented:disabled label {
+  color: var(--ink-3);
+  border-color: var(--hairline);
+  cursor: not-allowed;
+}
+
+/* 危险确认：斜纹底 + 红边，和危险带用同一套编码，不新造第二种警示语汇。 */
+.network-risk {
+  padding: 10px 12px;
+  background-image: var(--hatch);
+  border: 1px solid var(--fault);
+  border-radius: 2px;
+  font-size: 13px;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+#network-command,
+#network-cancel {
+  min-height: 44px;
+}
+
 /* ------------------------------------------------------------------ 令牌 */
 
 .credential {
@@ -1098,9 +1269,22 @@ a:hover {
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
   }
 
-  .command-body {
+  /* 窄屏两行：名称占满一行，快门与读数共享第二行，别让快门独占一整条。 */
+  .command-form {
     order: 1;
     flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "name name"
+      "shutter readout";
+    align-items: center;
+    gap: 10px;
+  }
+
+  .command-body {
+    grid-area: name;
+    min-width: 0;
   }
 
   .name-input {
@@ -1109,22 +1293,26 @@ a:hover {
   }
 
   .readout {
-    order: 2;
-    flex: 1 1 100%;
+    grid-area: readout;
+    min-width: 0;
   }
 
   .readout > div {
     flex: 1 1 0;
-    padding: 6px 8px;
+    padding: 6px 7px;
     min-width: 0;
   }
 
+  .readout dt {
+    font-size: 10px;
+  }
+
   .readout dd {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .shutter {
-    order: 3;
+    grid-area: shutter;
     width: 64px;
     height: 64px;
     border-width: 3px;
@@ -1136,7 +1324,7 @@ a:hover {
   }
 
   .command-actions {
-    order: 4;
+    order: 2;
     flex: 1 1 auto;
     margin-left: 0;
     gap: 8px;

@@ -1,10 +1,8 @@
 import { useState } from "preact/hooks";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
-import { formatBytes, formatCount, formatSeconds, formatStepProgress } from "./format";
+import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./format";
 import { CalibrationIcon, EjectIcon } from "./icons";
-
-const ACTIVE_STATES = new Set(["recording", "finalizing", "encoding", "verifying"]);
 
 export function CommandBar({ state }: { state: AppState }) {
   const [displayName, setDisplayName] = useState("");
@@ -15,36 +13,48 @@ export function CommandBar({ state }: { state: AppState }) {
 
   const connected = state.connection === "connected";
   const recording = deviceState === "recording";
-  const busy = deviceState !== null && ACTIVE_STATES.has(deviceState);
   const captureAllowed = state.device?.capabilities.capture !== false;
 
+  // 名称由原生 required 校验，快门只按权威状态和链路启停：事件流断开即封锁命令。
+  // 卷不可写就不准入：录制准入在创建 session 之前判断，不靠事后失败收敛。
+  const writable = state.device?.storage.writable === true;
   const canStart =
-    connected && captureAllowed && deviceState === "idle" && !state.commandPending && displayName.trim().length > 0;
+    Boolean(snapshot) &&
+    connected &&
+    captureAllowed &&
+    writable &&
+    deviceState === "idle" &&
+    !state.commandPending;
   const canStop = connected && recording && !state.commandPending;
-
-  const shutterLabel = recording ? "结束录制" : "开始录制";
+  const shutterLabel = state.commandPending ? "正在发送" : recording ? "结束录制" : "开始录制";
 
   return (
     <footer class="bottombar">
-      <button
-        type="button"
-        class="shutter"
-        data-recording={String(recording)}
-        aria-label={shutterLabel}
-        title={shutterLabel}
-        disabled={recording ? !canStop : !canStart}
-        onClick={() => {
+      <form
+        class="command-form"
+        onSubmit={(event) => {
+          event.preventDefault();
           if (recording) {
-            void store.stopCapture("user");
+            if (canStop) {
+              void store.stopCapture("user");
+            }
           } else if (canStart) {
             void store.startCapture(displayName.trim());
           }
         }}
       >
-        <span class="shutter-dot" aria-hidden="true" />
-      </button>
+        <button
+          type="submit"
+          class="shutter"
+          data-recording={String(recording)}
+          aria-label={shutterLabel}
+          title={shutterLabel}
+          disabled={recording ? !canStop : !canStart}
+        >
+          <span class="shutter-dot" aria-hidden="true" />
+        </button>
 
-      <div class="command-body">
+        <div class="command-body">
         {active ? (
           <>
             <span class="eyebrow">当前会话</span>
@@ -65,46 +75,50 @@ export function CommandBar({ state }: { state: AppState }) {
               maxLength={160}
               autocomplete="off"
               placeholder="例如：走廊采集 01"
+              required
               value={displayName}
-              disabled={!connected || busy || state.commandPending}
+              disabled={!connected || state.commandPending || deviceState !== "idle"}
               onInput={(event) => setDisplayName((event.currentTarget as HTMLInputElement).value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && canStart) {
-                  void store.startCapture(displayName.trim());
-                }
-              }}
             />
-            {!connected ? <p class="command-lock">事件流断开，命令已封锁</p> : null}
+            {!connected ? (
+              <p class="command-lock">
+                {state.connection === "connecting"
+                  ? "等待权威事件，命令已封锁"
+                  : "事件流断开，命令已封锁"}
+              </p>
+            ) : null}
           </>
         )}
-      </div>
+        </div>
 
-      <dl class="readout">
-        <div>
-          <dt>时长</dt>
-          <dd data-testid="elapsed-seconds" data-idle={String(!progress)}>
-            {formatSeconds(progress?.elapsed_seconds ?? 0)}
-          </dd>
-        </div>
-        <div>
-          <dt>帧数</dt>
-          <dd data-testid="captured-frames" data-idle={String(!progress)}>
-            {formatCount(progress?.captured_frames ?? 0)}
-          </dd>
-        </div>
-        <div>
-          <dt>写入</dt>
-          <dd data-testid="bytes-written" data-idle={String(!progress)}>
-            {formatBytes(progress?.bytes_written ?? 0)}
-          </dd>
-        </div>
-        <div>
-          <dt>校验</dt>
-          <dd data-testid="verification-progress" data-idle={String(!progress?.verification)}>
-            {formatStepProgress(progress?.verification)}
-          </dd>
-        </div>
-      </dl>
+        <dl class="readout">
+          <div>
+            <dt>时长</dt>
+            <dd data-testid="elapsed-seconds" data-idle={String(!progress)}>
+              {formatSeconds(progress?.elapsed_seconds ?? 0)}
+            </dd>
+          </div>
+          <div>
+            <dt>帧数</dt>
+            <dd data-testid="captured-frames" data-idle={String(!progress)}>
+              {formatCount(progress?.captured_frames ?? 0)}
+            </dd>
+          </div>
+          <div>
+            <dt>写入</dt>
+            <dd data-testid="bytes-written" data-idle={String(!progress)}>
+              {formatMiB(progress?.bytes_written ?? 0)}
+            </dd>
+          </div>
+          <div>
+            <dt>校验</dt>
+            <dd data-testid="verification-progress" data-idle={String(!progress?.verification)}>
+              {formatStepProgress(progress?.verification)}
+            </dd>
+          </div>
+        </dl>
+      </form>
+
 
       <div class="command-actions">
         <button

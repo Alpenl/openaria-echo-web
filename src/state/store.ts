@@ -6,6 +6,7 @@ import {
   shouldAnnounceRetainedDiagnostics,
   type Action,
   type AppState,
+  type NetworkDraft,
   type SessionFilter,
   type VisibleError,
 } from "./reducer";
@@ -309,6 +310,87 @@ export class EchoStore {
       this.dispatch({ type: "command.failed", error: visibleError(error) });
     } finally {
       this.dispatch({ type: "command.settled" });
+    }
+  };
+
+  private networkRefresh: Promise<void> | null = null;
+
+  refreshNetwork = async (): Promise<void> => {
+    if (!this.networkRefresh) {
+      this.networkRefresh = Promise.all([deviceApi.getDevice(), deviceApi.getNetwork()])
+        .then(([device, network]) => {
+          this.dispatch({ type: "device.loaded", payload: device });
+          this.dispatch({ type: "network.loaded", payload: network });
+        })
+        .catch((error) => console.warn(error))
+        .finally(() => {
+          this.networkRefresh = null;
+        });
+    }
+    await this.networkRefresh;
+  };
+
+  setNetworkDraft = (patch: Partial<NetworkDraft>): void =>
+    this.dispatch({ type: "network.draft", patch });
+
+  disarmNetwork = (): void => this.dispatch({ type: "network.armed", armed: false });
+
+  /**
+   * 两步提交：第一次只是武装——先把断线后果讲清楚，再让操作者确认。
+   * 这是唯一需要显式确认的命令，因为它可能切断操作者自己访问设备的链路。
+   */
+  submitNetwork = async (): Promise<void> => {
+    const { networkDraft: draft, networkPending, networkArmed, connection } = this.state;
+    if (networkPending || connection !== "connected") {
+      return;
+    }
+    const request: Record<string, unknown> = { mode: draft.mode };
+    if (draft.mode === "wifi-client" || draft.mode === "hotspot") {
+      const ssid = draft.ssid.trim();
+      if (!ssid || !draft.psk) {
+        return;
+      }
+      request.ssid = ssid;
+      request.psk = draft.psk;
+    } else if (draft.mode === "ethernet-static") {
+      const address = draft.address.trim();
+      if (!address) {
+        return;
+      }
+      request.address = address;
+      const gateway = draft.gateway.trim();
+      if (gateway) {
+        request.gateway = gateway;
+      }
+      const dns = draft.dns
+        .split(/[,\s]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      if (dns.length > 0) {
+        request.dns = dns;
+      }
+    } else if (draft.mode !== "ethernet-dhcp") {
+      return;
+    }
+
+    if (!networkArmed) {
+      this.dispatch({ type: "network.armed", armed: true });
+      return;
+    }
+
+    this.dispatch({ type: "network.pending" });
+    try {
+      const result = await deviceApi.setNetwork(request);
+      this.dispatch({ type: "network.succeeded", payload: result as never });
+      try {
+        await this.refreshNetwork();
+      } catch (error) {
+        console.warn(error);
+      }
+    } catch (error) {
+      this.dispatch({ type: "command.failed", error: visibleError(error) });
+    } finally {
+      this.dispatch({ type: "network.settled" });
     }
   };
 

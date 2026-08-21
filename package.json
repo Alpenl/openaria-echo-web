@@ -10,12 +10,15 @@
     "build": "tsc --noEmit && vite build && node scripts/manifest.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build"
+    "check": "npm run typecheck && npm run build && playwright test",
+    "test": "npm run build && playwright test",
+    "test:headed": "npm run build && playwright test --headed"
   },
   "dependencies": {
     "preact": "^10.27.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.20.1",
     "typescript": "^5.9.2",
     "vite": "^7.1.3"

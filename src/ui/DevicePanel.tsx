@@ -1,14 +1,21 @@
 import { useState } from "preact/hooks";
+import type { CameraFocusStatus } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
-import {
-  connectionMethodLabel,
-  formatBytes,
-  formatCelsius,
-  formatClock,
-  interfaceStatus,
-} from "./format";
+import { connectionMethodLabel, formatBytes, formatCelsius, formatClock } from "./format";
 import { CloseIcon } from "./icons";
+import { NetworkControl } from "./NetworkControl";
+
+function focusStatusText(focus: CameraFocusStatus): string {
+  const manual = `手动焦距 ${focus.value}（${focus.minimum}–${focus.maximum}，步进 ${focus.step}）`;
+  if (focus.auto_enabled === true) {
+    return "自动对焦已开启";
+  }
+  if (focus.auto_supported) {
+    return manual;
+  }
+  return `${manual}；当前相机未暴露 V4L2 focus_auto`;
+}
 
 function FocusControl({ state }: { state: AppState }) {
   const focus = state.capture?.snapshot.runtime.camera_focus ?? state.device?.runtime.camera_focus;
@@ -27,8 +34,8 @@ function FocusControl({ state }: { state: AppState }) {
             </dd>
           </div>
         </dl>
-        <p style="font-size:12px;color:var(--ink-3);text-wrap:pretty">
-          当前相机未暴露 V4L2 focus_absolute / focus_auto，设备也没有声明焦距能力。
+        <p id="focus-status" class="panel-note">
+          当前相机未暴露 V4L2 focus_absolute/focus_auto 控制
         </p>
       </section>
     );
@@ -41,10 +48,12 @@ function FocusControl({ state }: { state: AppState }) {
       <dl class="facts">
         <div>
           <dt>手动焦距</dt>
-          <dd data-testid="camera-focus-value">{focus.value}</dd>
+          <dd data-testid="camera-focus-value">{value}</dd>
         </div>
       </dl>
       <input
+        id="camera-focus-range"
+        name="value"
         type="range"
         min={focus.minimum}
         max={focus.maximum}
@@ -54,10 +63,14 @@ function FocusControl({ state }: { state: AppState }) {
         aria-label="手动焦距"
         onInput={(event) => setDraft(Number((event.currentTarget as HTMLInputElement).value))}
       />
+      <p id="focus-status" class="panel-note">
+        {focusStatusText(focus)}
+      </p>
       <div class="chips">
         <button
           type="button"
           class="chip"
+          id="focus-command"
           disabled={state.focusPending || draft === null}
           onClick={() => {
             if (draft !== null) {
@@ -66,19 +79,18 @@ function FocusControl({ state }: { state: AppState }) {
             }
           }}
         >
-          应用焦距
+          {state.focusPending ? "正在应用" : "应用焦距"}
         </button>
-        {focus.auto_supported ? (
-          <button
+        <button
             type="button"
             class="chip"
+            id="camera-focus-auto"
             aria-pressed={focus.auto_enabled === true}
-            disabled={state.focusPending}
+            disabled={state.focusPending || !focus.auto_supported}
             onClick={() => void store.setCameraFocus({ auto_enabled: !focus.auto_enabled })}
           >
             自动对焦
           </button>
-        ) : null}
       </div>
     </section>
   );
@@ -87,7 +99,6 @@ function FocusControl({ state }: { state: AppState }) {
 export function DevicePanel({ state }: { state: AppState }) {
   const device = state.device;
   const runtime = state.capture?.snapshot.runtime ?? device?.runtime ?? null;
-  const network = runtime?.network ?? null;
   const receipt = state.safeSwapReceipt?.receipt ?? null;
 
   return (
@@ -110,17 +121,15 @@ export function DevicePanel({ state }: { state: AppState }) {
         {receipt ? (
           <section class="detail-section" style="border-left:3px solid var(--permit)">
             <span class="eyebrow">MEDIA RELEASE</span>
-            <h3>可以移除存储设备</h3>
+            <h3>介质释放回执</h3>
             <dl class="facts">
               <div>
                 <dt>释放结果</dt>
-                <dd data-testid="safe-swap-release" data-tone="permit">
-                  {receipt.release_state}
-                </dd>
+                <dd data-tone="permit">{receipt.release_state}</dd>
               </div>
               <div>
                 <dt>会话</dt>
-                <dd data-testid="safe-swap-session">{receipt.session_id}</dd>
+                <dd>{receipt.session_id}</dd>
               </div>
               <div>
                 <dt>句柄数</dt>
@@ -154,51 +163,13 @@ export function DevicePanel({ state }: { state: AppState }) {
               <dd>{connectionMethodLabel(runtime?.connection_method)}</dd>
             </div>
             <div>
-              <dt>默认路由</dt>
-              <dd data-testid="network-default-route">
-                {connectionMethodLabel(network?.default_route)}
-              </dd>
-            </div>
-            <div>
               <dt>观测于</dt>
               <dd data-tone="muted">{formatClock(runtime?.observed_at)}</dd>
             </div>
           </dl>
         </section>
 
-        <section class="detail-section">
-          <span class="eyebrow">NETWORK</span>
-          <dl class="facts">
-            <div>
-              <dt>热点 AP</dt>
-              <dd data-testid="network-ap">{interfaceStatus(network?.ap)}</dd>
-            </div>
-            <div>
-              <dt>Wi-Fi</dt>
-              <dd data-testid="network-wifi">{interfaceStatus(network?.wifi_client)}</dd>
-            </div>
-            <div>
-              <dt>有线</dt>
-              <dd data-testid="network-wired">{interfaceStatus(network?.wired)}</dd>
-            </div>
-            <div>
-              <dt>mDNS</dt>
-              <dd
-                data-testid="network-mdns"
-                data-tone={state.networkStatus?.mdns ? undefined : "caution"}
-              >
-                {state.networkStatus?.mdns
-                  ? `${state.networkStatus.mdns.hostname}:${state.networkStatus.mdns.port}`
-                  : "不可用"}
-              </dd>
-            </div>
-          </dl>
-          <p style="font-size:12px;color:var(--ink-3);text-wrap:pretty">
-            {device?.capabilities.network_mutation
-              ? "设备空闲且已授权时才可写入网络配置。"
-              : "本机的安全 profile 不开放网络写入，因此这里只投影事实，不渲染写入口。"}
-          </p>
-        </section>
+        <NetworkControl state={state} />
 
         <FocusControl state={state} />
 
