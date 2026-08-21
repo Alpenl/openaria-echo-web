@@ -18,6 +18,11 @@ export type PanelId = "none" | "sessions" | "device";
 export type SessionFilter = "all" | "usable" | "unsuccessful";
 export type NetworkMode = "wifi-client" | "hotspot" | "ethernet-dhcp" | "ethernet-static";
 
+export interface FocusPeakingState {
+  enabled: boolean;
+  threshold: number;
+}
+
 export interface NetworkDraft {
   mode: NetworkMode;
   ssid: string;
@@ -72,6 +77,7 @@ export interface AppState {
   inspect: InspectMode;
   panel: PanelId;
   fullFrame: boolean;
+  focusPeaking: FocusPeakingState;
 }
 
 export type Action =
@@ -111,7 +117,10 @@ export type Action =
   | { type: "inspect.changed"; mode: InspectMode }
   | { type: "panel.opened"; panel: PanelId }
   | { type: "panel.closed" }
-  | { type: "full-frame.toggled" };
+  | { type: "full-frame.toggled" }
+  | { type: "focus-peaking.toggled" }
+  | { type: "focus-peaking.disabled" }
+  | { type: "focus-peaking.threshold"; threshold: number };
 
 export const initialState: AppState = {
   connection: "connecting",
@@ -141,6 +150,7 @@ export const initialState: AppState = {
   inspect: "both",
   panel: "none",
   fullFrame: false,
+  focusPeaking: { enabled: false, threshold: 96 },
 };
 
 function withCameraFocus(runtime: DeviceRuntime, focus: CameraFocusStatus): DeviceRuntime {
@@ -175,6 +185,17 @@ function isStaleCaptureSnapshot(current: CaptureStatus | null, incoming: Capture
   );
 }
 
+function captureIsRecording(capture: CaptureStatus | null): boolean {
+  return Boolean(capture?.snapshot.active_recording);
+}
+
+function clampPeakingThreshold(threshold: number): number {
+  if (!Number.isFinite(threshold)) {
+    return initialState.focusPeaking.threshold;
+  }
+  return Math.min(255, Math.max(0, Math.round(threshold)));
+}
+
 export function reduceState(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "device.loaded": {
@@ -188,9 +209,13 @@ export function reduceState(state: AppState, action: Action): AppState {
       if (isStaleCaptureSnapshot(state.capture, action.payload)) {
         return state;
       }
+      const focusPeaking = action.payload.snapshot.active_recording
+        ? { ...state.focusPeaking, enabled: false }
+        : state.focusPeaking;
       return {
         ...state,
         capture: action.payload,
+        focusPeaking,
         safeSwapReceipt: receiptMatchesCapture(state.safeSwapReceipt, action.payload)
           ? state.safeSwapReceipt
           : null,
@@ -320,6 +345,24 @@ export function reduceState(state: AppState, action: Action): AppState {
       return { ...state, panel: "none", selected: null };
     case "full-frame.toggled":
       return { ...state, fullFrame: !state.fullFrame };
+    case "focus-peaking.toggled":
+      return {
+        ...state,
+        focusPeaking: {
+          ...state.focusPeaking,
+          enabled: !state.focusPeaking.enabled && !captureIsRecording(state.capture),
+        },
+      };
+    case "focus-peaking.disabled":
+      return { ...state, focusPeaking: { ...state.focusPeaking, enabled: false } };
+    case "focus-peaking.threshold":
+      return {
+        ...state,
+        focusPeaking: {
+          ...state.focusPeaking,
+          threshold: clampPeakingThreshold(action.threshold),
+        },
+      };
     default:
       return state;
   }
