@@ -227,7 +227,7 @@ export interface ListSessionsQuery {
   cursor?: string | null;
 }
 
-export const deviceApi = {
+export const deviceApi = Object.freeze({
   getDevice: () => requestJson<DeviceDescriptor>("/device").then(assertSupportedDevice),
   getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status").then(assertCaptureStatus),
   getSafeSwap: () =>
@@ -275,7 +275,7 @@ export const deviceApi = {
     ),
   setNetwork: (request: Record<string, unknown>) =>
     requestJson<unknown>("/network", commandInit({ schema: "ylx.network-apply.v1", ...request })),
-};
+});
 
 export async function getLatestPreview(signal: AbortSignal): Promise<Blob> {
   const response = await fetch(`${API_ROOT}/preview`, {
