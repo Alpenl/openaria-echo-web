@@ -1,6 +1,7 @@
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatVector, imuSyncLabel } from "./format";
+import { FocusPeakingControl, FocusPeakingOverlay } from "./FocusPeaking";
 import { ExpandIcon } from "./icons";
 import type { PreviewState } from "../api/preview";
 
@@ -40,6 +41,7 @@ export function Stage({
         alt="设备实时预览"
         hidden={!frameUrl}
       />
+      <FocusPeakingOverlay state={state} frameUrl={frameUrl} />
       {!frameUrl ? (
         <p class="frame-empty">
           <span class="eyebrow">PREVIEW</span>
@@ -68,6 +70,7 @@ export function StageOverlays({ state }: { state: AppState }) {
           </button>
         ))}
       </div>
+      <FocusPeakingControl state={state} />
 
       <dl class="overlay-card">
         <span class="eyebrow">RAW IMU</span>

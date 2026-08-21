@@ -3,6 +3,10 @@
 import { expect, test } from "@playwright/test";
 
 /** @typedef {{path: string, idempotencyKey: string | null, body?: {schema?: string, mode?: string, ssid?: string}}} FixtureRequestLog */
+/** @typedef {{requests: number, inFlight: number, maxInFlight: number}} PreviewRouteMetrics */
+
+const FOCUS_PEAKING_PREVIEW_JPEG =
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAQACADAREAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD+f+gD9Sv+Ccv/ACZp4N/7iP8A6cbmgD9kP+DfH/mrn/cA/wDcjQB+kVAH8AdAH6lf8E5f+TNPBv8A3Ef/AE43NAH7If8ABvj/AM1c/wC4B/7kaAP0ioA//9k=";
 
 test.beforeEach(async ({ request }) => {
   await request.post("/__fixture/reset");
@@ -21,6 +25,67 @@ async function openPanel(page, name) {
   }
   await expect(panel).toBeVisible();
   return panel;
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {{limit?: number, delayMs?: number}} [options]
+ * @returns {Promise<PreviewRouteMetrics>}
+ */
+async function routeFocusPeakingPreview(page, options = {}) {
+  const body = Buffer.from(FOCUS_PEAKING_PREVIEW_JPEG, "base64");
+  const metrics = { requests: 0, inFlight: 0, maxInFlight: 0 };
+  await page.route("**/api/v3/preview", async (route) => {
+    metrics.requests += 1;
+    metrics.inFlight += 1;
+    metrics.maxInFlight = Math.max(metrics.maxInFlight, metrics.inFlight);
+    try {
+      if (options.delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+      }
+      if (options.limit && metrics.requests > options.limit) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            schema: "ylx.api-error.v2",
+            error: {
+              code: "preview_unavailable",
+              message: "当前没有可用的预览帧",
+              request_id: "5b778140-9b89-44ff-bc4d-f5b8df4f40ad",
+              retryable: true,
+            },
+          }),
+        });
+      } else {
+        await route.fulfill({ status: 200, contentType: "image/jpeg", body });
+      }
+    } finally {
+      metrics.inFlight -= 1;
+    }
+  });
+  return metrics;
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ */
+async function countFocusPeakingPixels(page) {
+  return page.getByTestId("focus-peaking-canvas").evaluate((node) => {
+    const canvas = /** @type {HTMLCanvasElement} */ (node);
+    const context = canvas.getContext("2d");
+    if (!context || canvas.width === 0 || canvas.height === 0) {
+      return 0;
+    }
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let highlighted = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index] > 210 && pixels[index + 1] < 140 && pixels[index + 2] > 210) {
+        highlighted += 1;
+      }
+    }
+    return highlighted;
+  });
 }
 
 test("设备工作台完全从同源离线加载", async ({ page }) => {
@@ -102,6 +167,120 @@ test("网页明确显示相机未暴露自动对焦控制", async ({ page, reque
 
   await expect(page.locator("#camera-focus-auto")).toBeDisabled();
   await expect(page.locator("#focus-status")).toContainText("未暴露 V4L2 focus_auto");
+});
+
+test("峰值对焦默认关闭，启用后在预览边缘绘制高亮", async ({ page }) => {
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  const toggle = page.getByRole("switch", { name: "峰值对焦" });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("focus-peaking-canvas")).toBeAttached();
+  expect(await countFocusPeakingPixels(page)).toBe(0);
+
+  await toggle.click();
+
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+});
+
+test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  const initialPixels = await countFocusPeakingPixels(page);
+
+  const threshold = page.getByLabel("峰值对焦阈值");
+  await threshold.evaluate((node) => {
+    const input = /** @type {HTMLInputElement} */ (node);
+    input.value = "255";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeLessThan(initialPixels);
+  expect(await countFocusPeakingPixels(page)).toBe(0);
+
+  await threshold.evaluate((node) => {
+    const input = /** @type {HTMLInputElement} */ (node);
+    input.value = "24";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+});
+
+test("峰值对焦在后台和录制时自动停用", async ({ page }) => {
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+
+  const toggle = page.getByRole("switch", { name: "峰值对焦" });
+  await toggle.click();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { value: true, configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(await countFocusPeakingPixels(page)).toBe(0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { value: false, configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await toggle.click();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+
+  await page.getByLabel("录制名称").fill("峰值对焦自动停用");
+  await page.getByRole("button", { name: "开始录制" }).click();
+
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(toggle).toBeDisabled();
+  await expect(toggle).toHaveAttribute("title", /录制期间自动关闭/);
+  await expect(page.locator("#focus-peaking-disabled-reason")).toContainText("避免取景处理占用浏览器资源");
+  expect(await countFocusPeakingPixels(page)).toBe(0);
+});
+
+test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = { decodeActive: 0, maxDecodeActive: 0, rendered: 0 };
+    Object.defineProperty(window, "__focusPeakingMetrics", { value: metrics });
+    const originalDecode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = async function () {
+      metrics.decodeActive += 1;
+      metrics.maxDecodeActive = Math.max(metrics.maxDecodeActive, metrics.decodeActive);
+      await new Promise((resolve) => setTimeout(resolve, 140));
+      try {
+        return await originalDecode.call(this);
+      } finally {
+        metrics.decodeActive -= 1;
+      }
+    };
+    const originalPutImageData = CanvasRenderingContext2D.prototype.putImageData;
+    CanvasRenderingContext2D.prototype.putImageData = function (...args) {
+      metrics.rendered += 1;
+      return originalPutImageData.apply(this, args);
+    };
+  });
+  const preview = await routeFocusPeakingPreview(page, { limit: 8 });
+  await page.goto("/");
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
+
+  await expect.poll(() => preview.requests).toBeGreaterThan(8);
+  await page.waitForTimeout(260);
+  const renderedAfterIdle = await page.evaluate(
+    () => /** @type {any} */ (window).__focusPeakingMetrics.rendered,
+  );
+  await page.waitForTimeout(360);
+  const metrics = await page.evaluate(() => /** @type {any} */ (window).__focusPeakingMetrics);
+
+  expect(metrics.maxDecodeActive).toBe(1);
+  expect(metrics.rendered).toBe(renderedAfterIdle);
+  expect(metrics.rendered).toBeLessThan(preview.requests);
+  expect(preview.maxInFlight).toBe(1);
 });
 
 test("网页可以提交 Wi-Fi 网络配置", async ({ page, request }) => {
