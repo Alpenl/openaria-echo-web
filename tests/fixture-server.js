@@ -43,6 +43,8 @@ const volumeId = "6ba7b810-9dad-41d1-80b4-00c04fd430c8";
 const sessionId = "01989f6a-2c00-7a1b-8c2d-3e4f50617283";
 const takeId = "01989f6a-2c00-7a1b-8c2d-3e4f50617284";
 const generationId = "7d516b70-d8ab-47d1-b2dc-5b1250138789";
+const historicalSessionId = "01989f6a-2c00-7a1b-8c2d-3e4f50617288";
+const historicalTakeId = "01989f6a-2c00-7a1b-8c2d-3e4f50617289";
 const nextAuthorityEpoch = "5fa85f64-5717-4562-b3fc-2c963f66afa6";
 const nextSessionId = "01989f6a-2c00-7a1b-8c2d-3e4f50617290";
 const nextTakeId = "01989f6a-2c00-7a1b-8c2d-3e4f50617291";
@@ -79,6 +81,7 @@ const previewJpeg = Buffer.from(
  * @property {Array<{path: string, authorization: string | null, lastEventId: string | null, idempotencyKey: string | null, body?: unknown}>} apiRequests
  * @property {{schema: "ylx.safe-swap-receipt-resource.v3", receipt: SafeSwapReceipt} | null} safeSwapResource
  * @property {ReturnType<typeof captureEvent> | null} staleSafeSwapEvent
+ * @property {number} captureSequence
  */
 
 /** @returns {CameraFocusStatus} */
@@ -232,9 +235,9 @@ function makeFixture() {
           },
         },
         {
-          session_id: sessionId,
+          session_id: historicalSessionId,
           producer_outcome: "sealed",
-          take_id: takeId,
+          take_id: historicalTakeId,
           take_sequence: 2,
           continuation_of: sealedSessionId,
           display_name: "长名称用于移动端布局验证-abcdefghijklmnop-第二段采集",
@@ -274,6 +277,7 @@ function makeFixture() {
     apiRequests: [],
     safeSwapResource: null,
     staleSafeSwapEvent: null,
+    captureSequence: 0,
   };
 }
 
@@ -523,14 +527,25 @@ async function readJson(request) {
 /** @param {string} displayName */
 function setRecording(displayName) {
   fixture.snapshot.source_revision += 1;
+  const sequence = fixture.captureSequence++;
+  const activeSessionId =
+    sequence === 0 ? sessionId : sequence === 1 ? nextSessionId : sequenceId(0x7300 + sequence * 2);
+  const activeTakeId =
+    sequence === 0 ? takeId : sequence === 1 ? nextTakeId : sequenceId(0x7301 + sequence * 2);
+  const activeGenerationId =
+    sequence === 0
+      ? generationId
+      : sequence === 1
+        ? nextGenerationId
+        : `7d516b70-d8ab-47d1-b2dc-5b125013${(0x8800 + sequence).toString(16).padStart(4, "0")}`;
   const recordingState = {
     schema: "ylx.recording-state.v1",
     state: "recording",
     authority_epoch: fixture.snapshot.authority_epoch,
     state_revision: fixture.snapshot.source_revision,
     updated_at: "2026-08-12T02:25:01Z",
-    session_id: sessionId,
-    take_id: takeId,
+    session_id: activeSessionId,
+    take_id: activeTakeId,
     display_name: displayName,
     device: fixture.device.device,
     storage: {
@@ -550,11 +565,16 @@ function setRecording(displayName) {
     ...fixture.snapshot.snapshot,
     device_state: "recording",
     active_recording: {
-      generation_id: generationId,
+      generation_id: activeGenerationId,
       recording_state: recordingState,
     },
     retained_unsuccessful: null,
   };
+}
+
+/** @param {number} suffix */
+function sequenceId(suffix) {
+  return `01989f6a-2c00-7a1b-8c2d-3e4f5061${suffix.toString(16).padStart(4, "0")}`;
 }
 
 function setFinalizing() {
@@ -579,6 +599,23 @@ function setFinalizing() {
 }
 
 function setIdleAfterUserStop() {
+  const current = fixture.snapshot.snapshot.active_recording?.recording_state;
+  if (current) {
+    fixture.sessions.items.unshift({
+      session_id: current.session_id,
+      producer_outcome: "sealed",
+      take_id: current.take_id,
+      take_sequence: fixture.sessions.items.length + 1,
+      continuation_of: null,
+      display_name: current.display_name,
+      device: current.device,
+      started_at: "2026-08-12T02:25:01Z",
+      ended_at: "2026-08-12T02:25:03Z",
+      duration_seconds: Math.max(1, Math.round(current.progress.elapsed_seconds)),
+      total_bytes: Math.max(64 * 1024 * 1024, current.progress.bytes_written),
+      verification: null,
+    });
+  }
   fixture.snapshot.source_revision += 1;
   fixture.snapshot.snapshot = {
     ...fixture.snapshot.snapshot,
@@ -1222,6 +1259,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v3/sessions") {
+    const sessionsSnapshot = structuredClone(fixture.sessions);
     if (fixture.sessionsDelayMs > 0) {
       await new Promise((resolveDelay) => setTimeout(resolveDelay, fixture.sessionsDelayMs));
     }
@@ -1238,7 +1276,7 @@ const server = createServer(async (request, response) => {
       });
       return;
     }
-    sendJson(response, 200, fixture.sessions);
+    sendJson(response, 200, sessionsSnapshot);
     return;
   }
 

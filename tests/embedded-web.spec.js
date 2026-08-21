@@ -519,6 +519,39 @@ test("结束录制接受空 204 并重新读取权威状态", async ({ page, req
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
+test("结束录制后新封存会话无刷新有界同步到台账", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionsDelayMs: 1000 } });
+  await page.goto("/");
+
+  const sessionRequestCount = async () => {
+    const response = await request.get("/__fixture/requests");
+    const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
+    return body.requests.filter((entry) => entry.path === "/api/v3/sessions").length;
+  };
+  await expect.poll(sessionRequestCount).toBeGreaterThanOrEqual(1);
+
+  const names = ["终态刷新第一段", "终态刷新第二段"];
+  for (const name of names) {
+    await page.getByLabel("录制名称").fill(name);
+    await page.getByRole("button", { name: "开始录制" }).click();
+    await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+    await page.getByRole("button", { name: "结束录制" }).click();
+    await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  }
+
+  await openPanel(page, "会话台账");
+  for (const name of names) {
+    await expect(page.getByTestId("session-item").filter({ hasText: name })).toHaveCount(1);
+  }
+
+  const settledCount = await sessionRequestCount();
+  expect(settledCount).toBeGreaterThanOrEqual(3);
+  expect(settledCount).toBeLessThanOrEqual(8);
+
+  await page.waitForTimeout(650);
+  expect(await sessionRequestCount()).toBe(settledCount);
+});
+
 test("开始录制原样显示 API problem 且服务恢复后可重试", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { startProblem: true } });
   await page.goto("/");
