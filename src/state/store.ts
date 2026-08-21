@@ -1,5 +1,5 @@
 import { DeviceApiError, deviceApi } from "../api/client";
-import type { CaptureEvent, SafeSwapReceipt, SessionList } from "../api/types";
+import type { CaptureEvent, CaptureStatus, SafeSwapReceipt, SessionList } from "../api/types";
 import {
   initialState,
   reduceState,
@@ -12,6 +12,30 @@ import {
 } from "./reducer";
 
 const SESSION_PAGE_SIZE = 25;
+const TERMINAL_CAPTURE_RETRY_DELAYS_MS = [120, 240] as const;
+const SEALED_SESSION_RETRY_DELAYS_MS = [120, 240] as const;
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
+function sealedTerminalSessionId(
+  previous: CaptureStatus | null,
+  next: CaptureStatus | null,
+): string | null {
+  const active = previous?.snapshot.active_recording;
+  if (
+    !active ||
+    !next ||
+    previous.authority_epoch !== next.authority_epoch ||
+    next.snapshot.device_state !== "idle" ||
+    next.snapshot.active_recording ||
+    next.snapshot.retained_unsuccessful
+  ) {
+    return null;
+  }
+  return active.recording_state.session_id;
+}
 
 export function visibleError(error: unknown): VisibleError {
   if (error instanceof DeviceApiError) {
@@ -34,6 +58,7 @@ export class EchoStore {
   private captureRefresh: Promise<void> | null = null;
   private relatedRefresh: Promise<void> | null = null;
   private sessionsRefresh: Promise<void> | null = null;
+  private sessionsRefreshDirty = false;
 
   getState = (): AppState => this.state;
 
@@ -210,22 +235,49 @@ export class EchoStore {
   }
 
   refreshSessions = async (): Promise<void> => {
-    if (!this.sessionsRefresh) {
-      this.dispatch({ type: "sessions.pending" });
-      this.sessionsRefresh = this.listSessions(null)
-        .then((sessions) =>
-          this.dispatch({ type: "sessions.loaded", payload: sessions, append: false }),
-        )
-        .catch((error) => {
-          console.warn(error);
-          this.dispatch({ type: "sessions.failed" });
-        })
-        .finally(() => {
-          this.sessionsRefresh = null;
-        });
+    if (this.sessionsRefresh) {
+      this.sessionsRefreshDirty = true;
+      await this.sessionsRefresh;
+      if (this.sessionsRefreshDirty) {
+        await this.refreshSessions();
+      }
+      return;
     }
+
+    this.sessionsRefresh = this.runSessionsRefreshLoop();
     await this.sessionsRefresh;
   };
+
+  private async runSessionsRefreshLoop(): Promise<void> {
+    try {
+      do {
+        this.sessionsRefreshDirty = false;
+        this.dispatch({ type: "sessions.pending" });
+        try {
+          const sessions = await this.listSessions(null);
+          this.dispatch({ type: "sessions.loaded", payload: sessions, append: false });
+        } catch (error) {
+          console.warn(error);
+          this.dispatch({ type: "sessions.failed" });
+        }
+      } while (this.sessionsRefreshDirty);
+    } finally {
+      this.sessionsRefresh = null;
+    }
+  }
+
+  private async refreshSessionsUntilVisible(sessionId: string): Promise<void> {
+    for (let attempt = 0; attempt <= SEALED_SESSION_RETRY_DELAYS_MS.length; attempt += 1) {
+      await this.refreshSessions();
+      if (this.state.sessions.items.some((session) => session.session_id === sessionId)) {
+        return;
+      }
+      const retryDelay = SEALED_SESSION_RETRY_DELAYS_MS[attempt];
+      if (retryDelay !== undefined) {
+        await wait(retryDelay);
+      }
+    }
+  }
 
   loadMoreSessions = async (): Promise<void> => {
     const { nextCursor, loading } = this.state.sessions;
@@ -243,6 +295,9 @@ export class EchoStore {
         this.sessionsRefresh = null;
       });
     await this.sessionsRefresh;
+    if (this.sessionsRefreshDirty) {
+      await this.refreshSessions();
+    }
   };
 
   setSessionQuery = (query: string): void => this.dispatch({ type: "sessions.query", query });
@@ -297,14 +352,22 @@ export class EchoStore {
     if (this.state.commandPending || this.state.connection !== "connected") {
       return;
     }
+    const stoppedSessionId =
+      reason === "user"
+        ? (this.state.capture?.snapshot.active_recording?.recording_state.session_id ?? null)
+        : null;
     this.dispatch({ type: "command.pending" });
     try {
+      const beforeStop = this.state.capture;
       const capture = await deviceApi.stopCapture(reason);
       if (capture) {
         this.dispatch({ type: "capture.snapshot", payload: capture });
       }
       await this.refreshCapture();
       await this.refreshRelatedResources();
+      if (stoppedSessionId) {
+        await this.refreshStoppedSession(beforeStop, stoppedSessionId);
+      }
       this.dispatch({ type: "command.succeeded" });
     } catch (error) {
       this.dispatch({ type: "command.failed", error: visibleError(error) });
@@ -312,6 +375,25 @@ export class EchoStore {
       this.dispatch({ type: "command.settled" });
     }
   };
+
+  private async refreshStoppedSession(
+    beforeStop: CaptureStatus | null,
+    stoppedSessionId: string,
+  ): Promise<void> {
+    let sealedSessionId = sealedTerminalSessionId(beforeStop, this.state.capture);
+    for (const retryDelay of TERMINAL_CAPTURE_RETRY_DELAYS_MS) {
+      if (sealedSessionId) {
+        break;
+      }
+      await wait(retryDelay);
+      await this.refreshCapture();
+      sealedSessionId = sealedTerminalSessionId(beforeStop, this.state.capture);
+    }
+    if (sealedSessionId === stoppedSessionId) {
+      await this.refreshRelatedResources();
+      await this.refreshSessionsUntilVisible(stoppedSessionId);
+    }
+  }
 
   private networkRefresh: Promise<void> | null = null;
 
@@ -425,16 +507,21 @@ export class EchoStore {
       event.authority_epoch === current.authority_epoch &&
       event.source_revision === current.source_revision + 1;
     if (isNextSnapshot || (event.type === "snapshot" && !current)) {
+      const capture = {
+        schema: "ylx.capture-status.v2",
+        authority_epoch: event.authority_epoch,
+        source_revision: event.source_revision,
+        snapshot: event.data as never,
+      };
       this.dispatch({
         type: "capture.snapshot",
-        payload: {
-          schema: "ylx.capture-status.v2",
-          authority_epoch: event.authority_epoch,
-          source_revision: event.source_revision,
-          snapshot: event.data as never,
-        },
+        payload: capture,
       });
       await this.refreshRelatedResources();
+      const stoppedSessionId = sealedTerminalSessionId(current, capture);
+      if (stoppedSessionId) {
+        await this.refreshSessionsUntilVisible(stoppedSessionId);
+      }
       return;
     }
     const matchesCurrent =
@@ -465,9 +552,14 @@ export class EchoStore {
       });
       return;
     }
+    const beforeRefresh = this.state.capture;
     await this.refreshCapture();
     if (event.type === "safe_swap" || event.type === "snapshot") {
       await this.refreshRelatedResources();
+      const stoppedSessionId = sealedTerminalSessionId(beforeRefresh, this.state.capture);
+      if (stoppedSessionId) {
+        await this.refreshSessionsUntilVisible(stoppedSessionId);
+      }
     }
   };
 }
