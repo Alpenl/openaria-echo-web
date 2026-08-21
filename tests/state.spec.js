@@ -15,8 +15,8 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "bc41fd6716290d9dfc1ed2a1129f2cdf7b8347ed83ee37d2e9ba2020131ba9a8",
-    bytes: 68751,
+    sha256: "6740c9875ee6dcf1564062b3b7e63d995d4c01cdd1e3fadcc49bd54b13ffc899",
+    bytes: 75767,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",

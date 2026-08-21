@@ -53,7 +53,7 @@ export interface DeviceRuntime {
     default_route: string;
   };
   live_imu: LiveImu | null;
-  camera_focus?: CameraFocusStatus | null;
+  camera_focus: CameraFocusStatus | null;
 }
 
 export interface DeviceCapabilities {
