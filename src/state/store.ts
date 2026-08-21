@@ -1,5 +1,11 @@
 import { DeviceApiError, deviceApi } from "../api/client";
-import type { CaptureEvent, CaptureStatus, SafeSwapReceipt, SessionList } from "../api/types";
+import type {
+  CaptureEvent,
+  CaptureStateEventPayload,
+  CaptureStatus,
+  SafeSwapReceipt,
+  SessionList,
+} from "../api/types";
 import {
   initialState,
   reduceState,
@@ -14,6 +20,18 @@ import {
 const SESSION_PAGE_SIZE = 25;
 const TERMINAL_CAPTURE_RETRY_DELAYS_MS = [120, 240] as const;
 const SEALED_SESSION_RETRY_DELAYS_MS = [120, 240] as const;
+const CAPTURE_STATE_EVENT_KEYS = new Set(["schema", "state", "volume_id", "generation_id"]);
+const CAPTURE_STATE_EVENT_STATES = new Set<CaptureStateEventPayload["state"]>([
+  "recording",
+  "finalizing",
+  "encoding",
+  "verifying",
+  "recoverable",
+  "failed",
+  "abandoned",
+]);
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
@@ -35,6 +53,33 @@ function sealedTerminalSessionId(
     return null;
   }
   return active.recording_state.session_id;
+}
+
+function isCaptureStateEventState(value: unknown): value is CaptureStateEventPayload["state"] {
+  return (
+    typeof value === "string" &&
+    CAPTURE_STATE_EVENT_STATES.has(value as CaptureStateEventPayload["state"])
+  );
+}
+
+function isUuidV4(value: unknown): value is string {
+  return typeof value === "string" && UUID_V4.test(value);
+}
+
+function isCaptureStateEventPayload(data: unknown): data is CaptureStateEventPayload {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return false;
+  }
+  const payload = data as Record<string, unknown>;
+  const keys = Object.keys(payload);
+  return (
+    keys.length === CAPTURE_STATE_EVENT_KEYS.size &&
+    keys.every((key) => CAPTURE_STATE_EVENT_KEYS.has(key)) &&
+    payload.schema === "ylx.capture-state-event.v2" &&
+    isCaptureStateEventState(payload.state) &&
+    isUuidV4(payload.volume_id) &&
+    isUuidV4(payload.generation_id)
+  );
 }
 
 export function visibleError(error: unknown): VisibleError {
@@ -97,10 +142,8 @@ export class EchoStore {
 
   async loadInitialState(): Promise<boolean> {
     try {
-      const [device, capture] = await Promise.all([
-        deviceApi.getDevice(),
-        deviceApi.getCaptureStatus(),
-      ]);
+      const device = await deviceApi.getDevice();
+      const capture = await deviceApi.getCaptureStatus();
       this.dispatch({ type: "device.loaded", payload: device });
       this.dispatch({ type: "capture.snapshot", payload: capture });
       this.dispatch({ type: "error.cleared" });
@@ -122,10 +165,14 @@ export class EchoStore {
           }
         })
         .catch((error) => console.warn(error));
-      void deviceApi
-        .getNetwork()
-        .then((network) => this.dispatch({ type: "network.loaded", payload: network }))
-        .catch((error) => console.warn(error));
+      if (device.capabilities.network_mutation) {
+        void deviceApi
+          .getNetwork()
+          .then((network) => this.dispatch({ type: "network.loaded", payload: network }))
+          .catch((error) => console.warn(error));
+      } else {
+        this.dispatch({ type: "network.loaded", payload: null });
+      }
       void this.refreshSessions();
       return true;
     } catch (error) {
@@ -399,9 +446,15 @@ export class EchoStore {
 
   refreshNetwork = async (): Promise<void> => {
     if (!this.networkRefresh) {
-      this.networkRefresh = Promise.all([deviceApi.getDevice(), deviceApi.getNetwork()])
-        .then(([device, network]) => {
+      this.networkRefresh = deviceApi
+        .getDevice()
+        .then(async (device) => {
           this.dispatch({ type: "device.loaded", payload: device });
+          if (!device.capabilities.network_mutation) {
+            this.dispatch({ type: "network.loaded", payload: null });
+            return;
+          }
+          const network = await deviceApi.getNetwork();
           this.dispatch({ type: "network.loaded", payload: network });
         })
         .catch((error) => console.warn(error))
@@ -423,7 +476,11 @@ export class EchoStore {
    */
   submitNetwork = async (): Promise<void> => {
     const { networkDraft: draft, networkPending, networkArmed, connection } = this.state;
-    if (networkPending || connection !== "connected") {
+    if (
+      networkPending ||
+      connection !== "connected" ||
+      this.state.device?.capabilities.network_mutation !== true
+    ) {
       return;
     }
     const request: Record<string, unknown> = { mode: draft.mode };
@@ -500,6 +557,12 @@ export class EchoStore {
       await this.refreshCapture();
       return;
     }
+    if (event.type === "state") {
+      if (isCaptureStateEventPayload(event.data)) {
+        await this.refreshCapture();
+      }
+      return;
+    }
     const current = this.state.capture;
     const isNextSnapshot =
       event.type === "snapshot" &&
@@ -508,7 +571,7 @@ export class EchoStore {
       event.source_revision === current.source_revision + 1;
     if (isNextSnapshot || (event.type === "snapshot" && !current)) {
       const capture = {
-        schema: "ylx.capture-status.v2",
+        schema: "ylx.capture-status.v4",
         authority_epoch: event.authority_epoch,
         source_revision: event.source_revision,
         snapshot: event.data as never,

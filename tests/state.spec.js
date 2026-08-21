@@ -1,19 +1,50 @@
 // @ts-check
 
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
+import { API_ROOT, DEVICE_API_CONSUMER_SUPPORT, deviceApi } from "../src/api/client.ts";
 import { initialState, reduceState } from "../src/state/reducer.ts";
 
 const authorityEpoch = "4fa85f64-5717-4562-b3fc-2c963f66afa6";
+const consumerSupportManifest = JSON.parse(
+  readFileSync(new URL("../contracts/ylx-device-api-support.json", import.meta.url), "utf8"),
+);
+
+test("Device API consumer support is v4-only and fail-closed", () => {
+  const v4Contract = {
+    major: 4,
+    path: "openapi/ylx-device-v4.openapi.yaml",
+    sha256: "bc41fd6716290d9dfc1ed2a1129f2cdf7b8347ed83ee37d2e9ba2020131ba9a8",
+    bytes: 68751,
+    info_version: "4.0.0",
+    server_base_path: "/api/v4",
+    lifecycle: "current",
+  };
+
+  expect(API_ROOT).toBe("/api/v4");
+  expect(DEVICE_API_CONSUMER_SUPPORT).toEqual({
+    schema: "ylx.device-api-consumer-support.v1",
+    consumer: "openaria-echo-web",
+    supported_device_api_majors: [4],
+    unknown_major_policy: "fail_closed",
+    required_contracts: [v4Contract],
+  });
+  expect(consumerSupportManifest).toEqual(DEVICE_API_CONSUMER_SUPPORT);
+  expect(consumerSupportManifest.required_contracts).toEqual([v4Contract]);
+  expect(deviceApi.artifactUrl("session", "artifact")).toBe(
+    "/api/v4/sessions/session/artifacts/artifact",
+  );
+});
 
 /** @param {number} sourceRevision @param {string} deviceState */
 function captureStatus(sourceRevision, deviceState) {
   return {
-    schema: "ylx.capture-status.v2",
+    schema: "ylx.capture-status.v4",
     authority_epoch: authorityEpoch,
     source_revision: sourceRevision,
     snapshot: {
-      schema: "ylx.capture-snapshot-event.v2",
+      schema: "ylx.capture-snapshot-event.v4",
       device_state: deviceState,
       active_recording: null,
       retained_unsuccessful: null,

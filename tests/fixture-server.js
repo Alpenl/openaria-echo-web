@@ -70,6 +70,7 @@ const previewJpeg = Buffer.from(
  * @property {boolean} stopProblem
  * @property {boolean} eventsUnavailable
  * @property {boolean} sessionsVolumeUnavailable
+ * @property {boolean} networkUnavailable
  * @property {number} sessionsDelayMs
  * @property {number} eventSnapshotDelayMs
  * @property {number} previewDelayMs
@@ -161,10 +162,10 @@ const makeRuntime = () => ({
 
 /** @returns {DeviceDescriptor & Record<string, unknown>} */
 const makeDevice = () => ({
-  schema: "ylx.device.v3",
+  schema: "ylx.device.v4",
   device: { device_id: deviceId, device_label: "YLX-A1B2C3D4" },
   hardware_fingerprint: `sha256:${"a".repeat(64)}`,
-  api_version: "3.0",
+  api_version: "4.0",
   build: {
     package_version: "0.5.0-dev",
     commit: "b".repeat(40),
@@ -188,11 +189,11 @@ const makeDevice = () => ({
 
 /** @returns {CaptureStatus} */
 const makeSnapshot = () => ({
-  schema: "ylx.capture-status.v2",
+  schema: "ylx.capture-status.v4",
   authority_epoch: authorityEpoch,
   source_revision: 1,
   snapshot: {
-    schema: "ylx.capture-snapshot-event.v2",
+    schema: "ylx.capture-snapshot-event.v4",
     device_state: "idle",
     active_recording: null,
     retained_unsuccessful: null,
@@ -266,6 +267,7 @@ function makeFixture() {
     stopProblem: false,
     eventsUnavailable: false,
     sessionsVolumeUnavailable: false,
+    networkUnavailable: false,
     sessionsDelayMs: 0,
     eventSnapshotDelayMs: 0,
     previewDelayMs: 20,
@@ -310,7 +312,7 @@ function sendJson(response, status, body) {
 function captureEvent(type, data, subjectSessionId = null) {
   const deliveryId = String(fixture.nextDeliveryId++);
   return {
-    schema: "ylx.capture-event.v3",
+    schema: "ylx.capture-event.v4",
     sse_delivery_id: deliveryId,
     authority_epoch: fixture.snapshot.authority_epoch,
     source_revision: fixture.snapshot.source_revision,
@@ -340,6 +342,29 @@ function broadcastSnapshot() {
   for (const response of eventResponses) {
     writeEvent(response, event);
   }
+}
+
+/** @param {boolean} valid @param {string} displayName */
+function broadcastStateEvent(valid, displayName) {
+  setRecording(displayName);
+  const recording = fixture.snapshot.snapshot.active_recording;
+  if (!recording) {
+    throw new Error("fixture 未建立 state 事件录制");
+  }
+  const eventData = valid
+    ? {
+        schema: "ylx.capture-state-event.v2",
+        state: recording.recording_state.state,
+        volume_id: recording.recording_state.storage.volume_id,
+        generation_id: recording.generation_id,
+      }
+    : {
+        schema: "ylx.capture-state-event.v2",
+        state: "idle",
+        volume_id: recording.recording_state.storage.volume_id,
+        generation_id: recording.generation_id,
+      };
+  broadcastEvent(captureEvent("state", eventData, recording.recording_state.session_id));
 }
 
 /** @param {ReturnType<typeof captureEvent>} event */
@@ -863,9 +888,12 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/__fixture/config" && request.method === "POST") {
-    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, sessionsDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean}} */ (
+    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, sessionsDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
       await readJson(request)
     );
+    if (typeof config.apiVersion === "string") {
+      fixture.device.api_version = config.apiVersion;
+    }
     if (Number.isFinite(config.commandDelayMs)) {
       fixture.commandDelayMs = Number(config.commandDelayMs);
     }
@@ -887,6 +915,12 @@ const server = createServer(async (request, response) => {
     }
     if (typeof config.eventsUnavailable === "boolean") {
       fixture.eventsUnavailable = config.eventsUnavailable;
+    }
+    if (typeof config.networkMutation === "boolean") {
+      fixture.device.capabilities.network_mutation = config.networkMutation;
+    }
+    if (typeof config.networkUnavailable === "boolean") {
+      fixture.networkUnavailable = config.networkUnavailable;
     }
     if (typeof config.sessionsVolumeUnavailable === "boolean") {
       fixture.sessionsVolumeUnavailable = config.sessionsVolumeUnavailable;
@@ -923,6 +957,13 @@ const server = createServer(async (request, response) => {
     if (body.broadcast) {
       broadcastSnapshot();
     }
+    response.writeHead(204).end();
+    return;
+  }
+
+  if (url.pathname === "/__fixture/state-event" && request.method === "POST") {
+    const body = /** @type {{displayName?: string, valid?: boolean}} */ (await readJson(request));
+    broadcastStateEvent(body.valid !== false, body.displayName ?? "其他客户端录制");
     response.writeHead(204).end();
     return;
   }
@@ -1021,7 +1062,7 @@ const server = createServer(async (request, response) => {
 
   /** @type {{path: string, authorization: string | null, lastEventId: string | null, idempotencyKey: string | null, body?: unknown} | null} */
   let apiRequest = null;
-  if (url.pathname.startsWith("/api/v3/")) {
+  if (url.pathname.startsWith("/api/")) {
     apiRequest = {
       path: url.pathname,
       authorization: request.headers.authorization ?? null,
@@ -1035,22 +1076,35 @@ const server = createServer(async (request, response) => {
           : null,
     };
     fixture.apiRequests.push(apiRequest);
+    if (!url.pathname.startsWith("/api/v4/")) {
+      sendJson(response, 410, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "unsupported_device_api_major",
+          message: "fixture only serves Device API v4",
+          request_id: "f6456e6c-3a8a-4edb-9b5d-793d561d8662",
+          retryable: false,
+          details: { path: url.pathname },
+        },
+      });
+      return;
+    }
     if (rejectMissingBearer(request, response)) {
       return;
     }
   }
 
-  if (url.pathname === "/api/v3/device") {
+  if (url.pathname === "/api/v4/device") {
     sendJson(response, 200, fixture.device);
     return;
   }
 
-  if (url.pathname === "/api/v3/capture/status") {
+  if (url.pathname === "/api/v4/capture/status") {
     sendJson(response, 200, fixture.snapshot);
     return;
   }
 
-  if (url.pathname === "/api/v3/camera/focus") {
+  if (url.pathname === "/api/v4/camera/focus") {
     const current = currentCameraFocus();
     if (!current) {
       sendJson(response, 404, {
@@ -1088,7 +1142,7 @@ const server = createServer(async (request, response) => {
           schema: "ylx.api-error.v2",
           error: {
             code: "invalid_camera_focus",
-            message: "焦距请求不符合 v3 契约",
+            message: "焦距请求不符合 v4 契约",
             request_id: "f347fe47-1556-4c1c-b855-90f3fa9733bd",
             retryable: false,
           },
@@ -1102,7 +1156,19 @@ const server = createServer(async (request, response) => {
     }
   }
 
-  if (url.pathname === "/api/v3/network") {
+  if (url.pathname === "/api/v4/network") {
+    if (fixture.networkUnavailable) {
+      sendJson(response, 404, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "network_unavailable",
+          message: "当前设备未开放网络配置接口",
+          request_id: "c8f29e94-3ba4-4d91-a2ac-df67aa9b4a77",
+          retryable: false,
+        },
+      });
+      return;
+    }
     if (request.method === "GET") {
       sendJson(response, 200, fixture.networkStatus);
       return;
@@ -1130,7 +1196,7 @@ const server = createServer(async (request, response) => {
           schema: "ylx.api-error.v2",
           error: {
             code: "invalid_network",
-            message: "网络请求不符合 v3 契约",
+            message: "网络请求不符合 v4 契约",
             request_id: "cbb4cc53-36c7-4cae-9cf7-029aa2b75ed2",
             retryable: false,
           },
@@ -1144,7 +1210,7 @@ const server = createServer(async (request, response) => {
     }
   }
 
-  if (url.pathname === "/api/v3/preview") {
+  if (url.pathname === "/api/v4/preview") {
     fixture.previewRequests += 1;
     const requestId = fixture.previewRequests;
     fixture.previewActive.add(requestId);
@@ -1174,7 +1240,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v3/capture/start" && request.method === "POST") {
+  if (url.pathname === "/api/v4/capture/start" && request.method === "POST") {
     const body = /** @type {{schema?: string, mode?: string, take?: {kind?: string}, display_name?: string}} */ (
       await readJson(request)
     );
@@ -1188,7 +1254,7 @@ const server = createServer(async (request, response) => {
         schema: "ylx.api-error.v2",
         error: {
           code: "invalid_capture_start",
-          message: "录制请求不符合 v3 契约",
+          message: "录制请求不符合 v4 契约",
           request_id: "f91cd40f-5715-46be-8fa8-cc67b58d1572",
           retryable: false,
         },
@@ -1206,7 +1272,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v3/capture/stop" && request.method === "POST") {
+  if (url.pathname === "/api/v4/capture/stop" && request.method === "POST") {
     const body = /** @type {{schema?: string, reason?: string}} */ (await readJson(request));
     if (
       !request.headers["idempotency-key"] ||
@@ -1217,7 +1283,7 @@ const server = createServer(async (request, response) => {
         schema: "ylx.api-error.v2",
         error: {
           code: "invalid_capture_stop",
-          message: "结束请求不符合 v3 契约",
+          message: "结束请求不符合 v4 契约",
           request_id: "024d4a33-8d89-43f8-87e6-413fc0c8aaef",
           retryable: false,
         },
@@ -1258,7 +1324,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v3/sessions") {
+  if (url.pathname === "/api/v4/sessions") {
     const sessionsSnapshot = structuredClone(fixture.sessions);
     if (fixture.sessionsDelayMs > 0) {
       await new Promise((resolveDelay) => setTimeout(resolveDelay, fixture.sessionsDelayMs));
@@ -1280,7 +1346,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v3/capture/safe-swap") {
+  if (url.pathname === "/api/v4/capture/safe-swap") {
     if (fixture.safeSwapResource) {
       sendJson(response, 200, fixture.safeSwapResource);
       return;
@@ -1297,7 +1363,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v3/capture/events") {
+  if (url.pathname === "/api/v4/capture/events") {
     if (fixture.eventsUnavailable) {
       sendJson(response, 503, {
         schema: "ylx.api-error.v2",

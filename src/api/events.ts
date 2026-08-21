@@ -1,7 +1,13 @@
-import { DeviceApiError, makeApiError, requestHeaders, waitForAbortableDelay } from "./client";
+import {
+  API_ROOT,
+  DeviceApiError,
+  makeApiError,
+  requestHeaders,
+  waitForAbortableDelay,
+} from "./client";
 import type { CaptureEvent } from "./types";
 
-const EVENT_URL = "/api/v3/capture/events";
+const EVENT_URL = `${API_ROOT}/capture/events`;
 
 /**
  * SSE delivery identity 只是传输身份，不是权威修订号。envelope 与 payload
@@ -33,7 +39,7 @@ function parseEvent(block: string): { id: string; payload: CaptureEvent } | null
   const payload = JSON.parse(data.join("\n")) as CaptureEvent;
   if (
     !payload ||
-    payload.schema !== "ylx.capture-event.v3" ||
+    payload.schema !== "ylx.capture-event.v4" ||
     payload.sse_delivery_id !== id ||
     payload.type !== event
   ) {

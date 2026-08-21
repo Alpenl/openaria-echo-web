@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * 浏览器测试跑在真实构建产物上：fixture-server 服务 `dist/`，并以固定 fixture
- * 扮演 Device API v3。跑之前必须先 `npm run build`。
+ * 扮演 Device API v4。跑之前必须先 `npm run build`。
  */
 export default defineConfig({
   testDir: "./tests",

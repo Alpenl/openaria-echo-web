@@ -35,7 +35,7 @@ async function openPanel(page, name) {
 async function routeFocusPeakingPreview(page, options = {}) {
   const body = Buffer.from(FOCUS_PEAKING_PREVIEW_JPEG, "base64");
   const metrics = { requests: 0, inFlight: 0, maxInFlight: 0 };
-  await page.route("**/api/v3/preview", async (route) => {
+  await page.route("**/api/v4/preview", async (route) => {
     metrics.requests += 1;
     metrics.inFlight += 1;
     metrics.maxInFlight = Math.max(metrics.maxInFlight, metrics.inFlight);
@@ -118,6 +118,129 @@ test("权威快照呈现设备、容量和真实 raw IMU", async ({ page }) => {
   await expect(page.getByTestId("imu-sync")).toHaveText("good");
 });
 
+test("未知 Device API major 失败关闭且不回退 v3 raw", async ({ page, request }) => {
+  /** @type {string[]} */
+  const pageApiPaths = [];
+  page.on("request", (browserRequest) => {
+    const path = new URL(browserRequest.url()).pathname;
+    if (path.startsWith("/api/")) {
+      pageApiPaths.push(path);
+    }
+  });
+  await request.post("/__fixture/config", { data: { apiVersion: "5.0" } });
+
+  await page.goto("/");
+
+  await expect(page.locator(".connection")).toHaveText("连接中断");
+  await expect(page.getByRole("alert")).toContainText("unsupported_device_api_major");
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
+  const paths = body.requests.map((entry) => entry.path);
+  expect(paths).toEqual(["/api/v4/device"]);
+  expect(pageApiPaths).toEqual(["/api/v4/device"]);
+  expect(paths).not.toContain("/api/v4/capture/status");
+  expect(paths).not.toContain("/api/v4/sessions");
+  expect(paths).not.toContain("/api/v4/network");
+  expect(paths).not.toContain("/api/v4/capture/events");
+  expect(paths).not.toContain("/api/v4/preview");
+  expect(pageApiPaths.some((path) => path.startsWith("/api/v3/"))).toBe(false);
+});
+
+test("v4 state 事件触发一次权威刷新并保持事件流连接", async ({ page, request }) => {
+  /** @type {string[]} */
+  const warnings = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") {
+      warnings.push(message.text());
+    }
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+
+  const counts = async () => {
+    const response = await request.get("/__fixture/requests");
+    const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
+    return {
+      events: body.requests.filter((entry) => entry.path === "/api/v4/capture/events").length,
+      statuses: body.requests.filter((entry) => entry.path === "/api/v4/capture/status").length,
+    };
+  };
+  await expect.poll(async () => (await counts()).events).toBe(1);
+  const before = await counts();
+
+  await request.post("/__fixture/state-event", {
+    data: { displayName: "state event refresh", valid: true },
+  });
+
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  await expect(page.getByText("state event refresh", { exact: true })).toBeVisible();
+  await expect.poll(async () => (await counts()).statuses).toBeGreaterThan(before.statuses);
+  const after = await counts();
+  expect(after.events).toBe(before.events);
+  expect(warnings).toEqual([]);
+});
+
+test("无效 v4 state payload 不触发权威刷新", async ({ page, request }) => {
+  /** @type {string[]} */
+  const warnings = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") {
+      warnings.push(message.text());
+    }
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+
+  const counts = async () => {
+    const response = await request.get("/__fixture/requests");
+    const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
+    return {
+      events: body.requests.filter((entry) => entry.path === "/api/v4/capture/events").length,
+      statuses: body.requests.filter((entry) => entry.path === "/api/v4/capture/status").length,
+    };
+  };
+  await expect.poll(async () => (await counts()).events).toBe(1);
+  const before = await counts();
+
+  await request.post("/__fixture/state-event", {
+    data: { displayName: "invalid state event should not refresh", valid: false },
+  });
+  await page.waitForTimeout(250);
+
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  const after = await counts();
+  expect(after.events).toBe(before.events);
+  expect(after.statuses).toBe(before.statuses);
+  expect(warnings).toEqual([]);
+});
+
+test("初始加载在设备未声明网络变更能力时不读取 network", async ({ page, request }) => {
+  /** @type {string[]} */
+  const warnings = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") {
+      warnings.push(message.text());
+    }
+  });
+  await request.post("/__fixture/config", {
+    data: { networkMutation: false, networkUnavailable: true },
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
+  const paths = body.requests.map((entry) => entry.path);
+  expect(paths).not.toContain("/api/v4/network");
+  expect(warnings).toEqual([]);
+});
+
 test("慢会话清单不阻塞权威状态、事件流和录制准入", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { sessionsDelayMs: 10_000 } });
 
@@ -154,7 +277,7 @@ test("网页可以调整相机焦距并同步到权威快照", async ({ page, re
     await response.json()
   );
   const focusRequests = body.requests.filter(
-    (entry) => entry.path === "/api/v3/camera/focus" && entry.idempotencyKey,
+    (entry) => entry.path === "/api/v4/camera/focus" && entry.idempotencyKey,
   );
   expect(focusRequests).toHaveLength(1);
 });
@@ -303,7 +426,7 @@ test("网页可以提交 Wi-Fi 网络配置", async ({ page, request }) => {
   /** @type {{requests: FixtureRequestLog[]}} */
   const body = await response.json();
   const networkRequests = body.requests.filter(
-    (entry) => entry.path === "/api/v3/network" && entry.idempotencyKey,
+    (entry) => entry.path === "/api/v4/network" && entry.idempotencyKey,
   );
   expect(networkRequests).toHaveLength(1);
   expect(networkRequests[0].body).toMatchObject({
@@ -360,7 +483,7 @@ test("缺少 crypto.randomUUID 的 HTTP LAN 浏览器仍能发送录制命令", 
   const body = /** @type {{requests: Array<{path: string, idempotencyKey: string | null}>}} */ (
     await response.json()
   );
-  const starts = body.requests.filter((entry) => entry.path === "/api/v3/capture/start");
+  const starts = body.requests.filter((entry) => entry.path === "/api/v4/capture/start");
   expect(starts).toHaveLength(1);
   expect(starts[0].idempotencyKey).toMatch(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -382,7 +505,7 @@ test("录制命令只在本次请求结束后解锁", async ({ page, request }) 
     await pendingResponse.json()
   ).requests;
   expect(
-    pendingRequests.filter((entry) => entry.path === "/api/v3/capture/start"),
+    pendingRequests.filter((entry) => entry.path === "/api/v4/capture/start"),
   ).toHaveLength(1);
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
@@ -393,7 +516,7 @@ test("customer 事件流携带令牌并在断线后从权威快照收敛", async
   /** @type {import("@playwright/test").Request[]} */
   const pageEventRequests = [];
   page.on("request", (browserRequest) => {
-    if (new URL(browserRequest.url()).pathname === "/api/v3/capture/events") {
+    if (new URL(browserRequest.url()).pathname === "/api/v4/capture/events") {
       pageEventRequests.push(browserRequest);
     }
   });
@@ -408,7 +531,7 @@ test("customer 事件流携带令牌并在断线后从权威快照收敛", async
     .poll(async () => {
       const response = await request.get("/__fixture/requests");
       const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
-      return body.requests.filter((entry) => entry.path === "/api/v3/capture/events").length;
+      return body.requests.filter((entry) => entry.path === "/api/v4/capture/events").length;
     })
     .toBe(1);
 
@@ -426,7 +549,7 @@ test("customer 事件流携带令牌并在断线后从权威快照收敛", async
   );
   const events = body.requests.filter(
     (entry) =>
-      entry.path === "/api/v3/capture/events" &&
+      entry.path === "/api/v4/capture/events" &&
       entry.authorization === "Bearer customer-token",
   );
   expect(events.length).toBeGreaterThanOrEqual(2);
@@ -454,7 +577,7 @@ test("事件流持续断线时禁用写操作且限制重连频率", async ({ pa
     await firstResponse.json()
   );
   const firstCount = firstBody.requests.filter(
-    (entry) => entry.path === "/api/v3/capture/events",
+    (entry) => entry.path === "/api/v4/capture/events",
   ).length;
 
   await page.waitForTimeout(650);
@@ -464,7 +587,7 @@ test("事件流持续断线时禁用写操作且限制重连频率", async ({ pa
     await laterResponse.json()
   );
   const laterCount = laterBody.requests.filter(
-    (entry) => entry.path === "/api/v3/capture/events",
+    (entry) => entry.path === "/api/v4/capture/events",
   ).length;
   expect(laterCount - firstCount).toBeLessThanOrEqual(1);
 });
@@ -480,7 +603,7 @@ test("事件流重连处理首个权威事件前保持写操作禁用", async ({
     .poll(async () => {
       const response = await request.get("/__fixture/requests");
       const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
-      return body.requests.filter((entry) => entry.path === "/api/v3/capture/events").length;
+      return body.requests.filter((entry) => entry.path === "/api/v4/capture/events").length;
     })
     .toBeGreaterThanOrEqual(2);
   await expect(page.locator(".connection")).toHaveText("连接中断");
@@ -504,7 +627,7 @@ test("事件流 401 停止重连并回到令牌入口", async ({ page, request }
     await unauthorizedResponse.json()
   );
   const unauthorizedCount = unauthorizedBody.requests.filter(
-    (entry) => entry.path === "/api/v3/capture/events",
+    (entry) => entry.path === "/api/v4/capture/events",
   ).length;
 
   await page.waitForTimeout(500);
@@ -514,7 +637,7 @@ test("事件流 401 停止重连并回到令牌入口", async ({ page, request }
     await laterResponse.json()
   );
   const laterCount = laterBody.requests.filter(
-    (entry) => entry.path === "/api/v3/capture/events",
+    (entry) => entry.path === "/api/v4/capture/events",
   ).length;
   expect(laterCount).toBe(unauthorizedCount);
 });
@@ -524,7 +647,7 @@ test("慢预览响应不排队且录制期间继续更新左眼画面", async ({
   let previewMaxInFlight = 0;
   /** @param {import("@playwright/test").Request} networkRequest */
   const isPagePreview = (networkRequest) =>
-    new URL(networkRequest.url()).pathname === "/api/v3/preview";
+    new URL(networkRequest.url()).pathname === "/api/v4/preview";
   page.on("request", (networkRequest) => {
     if (isPagePreview(networkRequest)) {
       previewInFlight += 1;
@@ -613,7 +736,7 @@ test("空闲预览不可用不会持续污染浏览器控制台", async ({ page 
       warnings.push(message.text());
     }
   });
-  await page.route("**/api/v3/preview", async (route) => {
+  await page.route("**/api/v4/preview", async (route) => {
     await route.fulfill({
       status: 503,
       contentType: "application/problem+json",
@@ -705,7 +828,7 @@ test("结束录制后新封存会话无刷新有界同步到台账", async ({ pa
   const sessionRequestCount = async () => {
     const response = await request.get("/__fixture/requests");
     const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
-    return body.requests.filter((entry) => entry.path === "/api/v3/sessions").length;
+    return body.requests.filter((entry) => entry.path === "/api/v4/sessions").length;
   };
   await expect.poll(sessionRequestCount).toBeGreaterThanOrEqual(1);
 
@@ -943,7 +1066,7 @@ test("customer 401 后可输入 Bearer 令牌并连接设备", async ({ page, re
   );
   const authenticatedEvents = body.requests.filter(
     (entry) =>
-      entry.path === "/api/v3/capture/events" &&
+      entry.path === "/api/v4/capture/events" &&
       entry.authorization === "Bearer customer-token",
   );
   expect(authenticatedEvents).toHaveLength(1);

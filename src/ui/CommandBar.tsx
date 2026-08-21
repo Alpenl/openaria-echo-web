@@ -136,14 +136,14 @@ export function CommandBar({ state }: { state: AppState }) {
           type="button"
           class="command-button"
           disabled
-          title="标定录制路径尚未在 Device API v3 暴露"
+          title="标定录制路径尚未在 Device API v4 暴露"
           aria-describedby="calibration-reason"
         >
           <CalibrationIcon size={17} />
           <span style="margin-left:8px">标定录制</span>
         </button>
         <span id="calibration-reason" class="visually-hidden">
-          标定录制路径尚未在 Device API v3 暴露，因此这里不提供入口，也不会回退为普通生产录制。
+          标定录制路径尚未在 Device API v4 暴露，因此这里不提供入口，也不会回退为普通生产录制。
         </span>
       </div>
     </footer>
