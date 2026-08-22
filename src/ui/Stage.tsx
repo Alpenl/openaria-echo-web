@@ -72,27 +72,31 @@ export function StageOverlays({ state }: { state: AppState }) {
       </div>
       <FocusPeakingControl state={state} />
 
-      <dl class="overlay-card">
-        <span class="eyebrow">RAW IMU</span>
-        <div class="imu-row">
-          <dt>a</dt>
-          <dd data-testid="acceleration" data-available={String(Boolean(imu))}>
-            {imu ? formatVector(imu.raw.accelerometer, "raw") : "不可用"}
-          </dd>
-        </div>
-        <div class="imu-row">
-          <dt>ω</dt>
-          <dd data-testid="angular-velocity" data-available={String(Boolean(imu))}>
-            {imu ? formatVector(imu.raw.gyroscope, "raw") : "不可用"}
-          </dd>
-        </div>
-        <div class="imu-row">
-          <dt aria-label="同步质量">≈</dt>
-          <dd data-testid="imu-sync" data-available={String(Boolean(imu))}>
-            {imu ? imuSyncLabel(imu.sync.quality) : "不可用"}
-          </dd>
-        </div>
-      </dl>
+      <section class="overlay-card" aria-labelledby="raw-imu-heading">
+        <h2 id="raw-imu-heading" class="eyebrow">
+          RAW IMU
+        </h2>
+        <dl class="imu-list">
+          <div class="imu-row">
+            <dt>a</dt>
+            <dd data-testid="acceleration" data-available={String(Boolean(imu))}>
+              {imu ? formatVector(imu.raw.accelerometer, "raw") : "不可用"}
+            </dd>
+          </div>
+          <div class="imu-row">
+            <dt>ω</dt>
+            <dd data-testid="angular-velocity" data-available={String(Boolean(imu))}>
+              {imu ? formatVector(imu.raw.gyroscope, "raw") : "不可用"}
+            </dd>
+          </div>
+          <div class="imu-row">
+            <dt aria-label="同步质量">≈</dt>
+            <dd data-testid="imu-sync" data-available={String(Boolean(imu))}>
+              {imu ? imuSyncLabel(imu.sync.quality) : "不可用"}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
       {singleEye ? (
         <button

@@ -111,6 +111,10 @@ test("权威快照呈现设备、容量和真实 raw IMU", async ({ page }) => {
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.getByTestId("storage-available")).toHaveText("82.0 GiB");
   await expect(page.getByTestId("temperature")).toHaveText("43.5 °C");
+  const rawImu = page.getByRole("region", { name: "RAW IMU" });
+  await expect(rawImu).toBeVisible();
+  await expect(rawImu.locator("dl > div")).toHaveCount(3);
+  await expect(rawImu.locator("dl > :not(div)")).toHaveCount(0);
   await expect(page.getByTestId("acceleration")).toContainText("x 12.000");
   await expect(page.getByTestId("acceleration")).toContainText("raw");
   await expect(page.getByTestId("angular-velocity")).toContainText("x 1.000");

@@ -613,6 +613,12 @@ a:hover {
   backdrop-filter: blur(12px);
 }
 
+.imu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .imu-row {
   display: flex;
   align-items: baseline;
