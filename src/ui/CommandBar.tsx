@@ -1,8 +1,58 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./format";
 import { CalibrationIcon, EjectIcon } from "./icons";
+
+function useDisplayedElapsedSeconds(
+  authoritativeSeconds: number,
+  sessionId: string | null,
+  running: boolean,
+): number {
+  const [displayed, setDisplayed] = useState(authoritativeSeconds);
+  const anchorRef = useRef({
+    sessionId,
+    seconds: authoritativeSeconds,
+    observedAt: performance.now(),
+    running: false,
+  });
+
+  useEffect(() => {
+    const observedAt = performance.now();
+    const previous = anchorRef.current;
+    const continuing =
+      running && sessionId !== null && previous.running && previous.sessionId === sessionId;
+    const extrapolated =
+      previous.seconds + Math.max(0, observedAt - previous.observedAt) / 1000;
+    const anchoredSeconds = continuing
+      ? Math.max(authoritativeSeconds, extrapolated)
+      : authoritativeSeconds;
+    anchorRef.current = {
+      sessionId,
+      seconds: anchoredSeconds,
+      observedAt,
+      running,
+    };
+    setDisplayed((current) => (continuing ? Math.max(current, anchoredSeconds) : anchoredSeconds));
+
+    if (!running || sessionId === null) {
+      return;
+    }
+
+    const update = () => {
+      const anchor = anchorRef.current;
+      if (!anchor.running || anchor.sessionId !== sessionId) {
+        return;
+      }
+      const interpolated = anchor.seconds + (performance.now() - anchor.observedAt) / 1000;
+      setDisplayed((current) => Math.max(current, interpolated));
+    };
+    const timer = globalThis.setInterval(update, 50);
+    return () => globalThis.clearInterval(timer);
+  }, [authoritativeSeconds, running, sessionId]);
+
+  return displayed;
+}
 
 export function CommandBar({ state }: { state: AppState }) {
   const [displayName, setDisplayName] = useState("");
@@ -13,6 +63,11 @@ export function CommandBar({ state }: { state: AppState }) {
 
   const connected = state.connection === "connected";
   const recording = deviceState === "recording";
+  const displayedElapsed = useDisplayedElapsedSeconds(
+    progress?.elapsed_seconds ?? 0,
+    active?.session_id ?? null,
+    connected && recording,
+  );
   const captureAllowed = state.device?.capabilities.capture !== false;
 
   // 名称由原生 required 校验，快门只按权威状态和链路启停：事件流断开即封锁命令。
@@ -95,7 +150,7 @@ export function CommandBar({ state }: { state: AppState }) {
           <div>
             <dt>时长</dt>
             <dd data-testid="elapsed-seconds" data-idle={String(!progress)}>
-              {formatSeconds(progress?.elapsed_seconds ?? 0)}
+              {formatSeconds(displayedElapsed)}
             </dd>
           </div>
           <div>

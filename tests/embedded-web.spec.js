@@ -182,6 +182,21 @@ test("v4 state 事件触发一次权威刷新并保持事件流连接", async ({
   expect(warnings).toEqual([]);
 });
 
+test("v4 终态 state 事件把新封存会话同步到台账", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByLabel("录制名称").fill("终态事件封存");
+  await page.getByRole("button", { name: "开始录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+
+  await request.post("/__fixture/terminal-state-event");
+
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  await openPanel(page, "会话台账");
+  await expect(
+    page.getByTestId("session-item").filter({ hasText: "终态事件封存" }),
+  ).toHaveCount(1);
+});
+
 test("无效 v4 state payload 不触发权威刷新", async ({ page, request }) => {
   /** @type {string[]} */
   const warnings = [];
@@ -218,7 +233,7 @@ test("无效 v4 state payload 不触发权威刷新", async ({ page, request }) 
   expect(warnings).toEqual([]);
 });
 
-test("初始加载在设备未声明网络变更能力时不读取 network", async ({ page, request }) => {
+test("设备未声明网络变更能力时仍读取只读网络状态和 mDNS", async ({ page, request }) => {
   /** @type {string[]} */
   const warnings = [];
   page.on("console", (message) => {
@@ -227,17 +242,21 @@ test("初始加载在设备未声明网络变更能力时不读取 network", asy
     }
   });
   await request.post("/__fixture/config", {
-    data: { networkMutation: false, networkUnavailable: true },
+    data: { networkMutation: false },
   });
 
   await page.goto("/");
 
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.locator(".connection")).toHaveText("已连接");
+  await openPanel(page, "设备与链路");
+  await expect(page.getByTestId("network-mdns")).toHaveText("rp-ylx.local:8080");
+  await expect(page.locator("#network-status")).toHaveText("网络状态只读；配置修改未开放");
+  await expect(page.getByRole("form", { name: "网络设置" })).toHaveCount(0);
   const response = await request.get("/__fixture/requests");
   const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
   const paths = body.requests.map((entry) => entry.path);
-  expect(paths).not.toContain("/api/v4/network");
+  expect(paths).toContain("/api/v4/network");
   expect(warnings).toEqual([]);
 });
 
@@ -292,19 +311,14 @@ test("网页明确显示相机未暴露自动对焦控制", async ({ page, reque
   await expect(page.locator("#focus-status")).toContainText("未暴露 V4L2 focus_auto");
 });
 
-test("峰值对焦默认关闭，启用后在预览边缘绘制高亮", async ({ page }) => {
+test("峰值对焦默认启用并在预览边缘绘制高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
 
   await expect(page.getByTestId("preview-image")).toBeVisible();
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await expect(page.getByTestId("focus-peaking-canvas")).toBeAttached();
-  expect(await countFocusPeakingPixels(page)).toBe(0);
-
-  await toggle.click();
-
   await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("focus-peaking-canvas")).toBeAttached();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 });
 
@@ -312,7 +326,6 @@ test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
 
-  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   const initialPixels = await countFocusPeakingPixels(page);
 
@@ -334,37 +347,34 @@ test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 });
 
-test("峰值对焦在后台和录制时自动停用", async ({ page }) => {
+test("峰值对焦在后台暂停并在录制期间保持启用", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
 
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
-  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", { value: true, configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
   expect(await countFocusPeakingPixels(page)).toBe(0);
 
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", { value: false, configurable: true });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  await toggle.click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 
-  await page.getByLabel("录制名称").fill("峰值对焦自动停用");
+  await page.getByLabel("录制名称").fill("峰值对焦保持启用");
   await page.getByRole("button", { name: "开始录制" }).click();
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await expect(toggle).toBeDisabled();
-  await expect(toggle).toHaveAttribute("title", /录制期间自动关闭/);
-  await expect(page.locator("#focus-peaking-disabled-reason")).toContainText("避免取景处理占用浏览器资源");
-  expect(await countFocusPeakingPixels(page)).toBe(0);
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(toggle).toBeEnabled();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 });
 
 test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
@@ -390,7 +400,6 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   });
   const preview = await routeFocusPeakingPreview(page, { limit: 8 });
   await page.goto("/");
-  await page.getByRole("switch", { name: "峰值对焦" }).click();
 
   await expect.poll(() => preview.requests).toBeGreaterThan(8);
   await page.waitForTimeout(260);
@@ -1035,6 +1044,28 @@ test("progress 事件触发权威快照刷新并显示录制计数", async ({ pa
   await expect(page.getByTestId("elapsed-seconds")).toHaveText("12.4 秒");
   await expect(page.getByTestId("captured-frames")).toHaveText("744");
   await expect(page.getByTestId("bytes-written")).toHaveText("42.0 MiB");
+  const samples = await page.evaluate(async () => {
+    const values = [];
+    for (let index = 0; index < 7; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      values.push(
+        Number.parseFloat(document.querySelector('[data-testid="elapsed-seconds"]')?.textContent ?? "0"),
+      );
+    }
+    return values;
+  });
+  expect(new Set(samples).size).toBeGreaterThanOrEqual(3);
+  for (let index = 1; index < samples.length; index += 1) {
+    expect(samples[index]).toBeGreaterThanOrEqual(samples[index - 1]);
+  }
+
+  const beforeCorrection = samples.at(-1) ?? 0;
+  await request.post("/__fixture/progress");
+  await expect(page.getByTestId("captured-frames")).toHaveText("756");
+  const afterCorrection = Number.parseFloat(
+    (await page.getByTestId("elapsed-seconds").textContent()) ?? "0",
+  );
+  expect(afterCorrection).toBeGreaterThanOrEqual(beforeCorrection);
 });
 
 test("customer 401 后可输入 Bearer 令牌并连接设备", async ({ page, request }) => {

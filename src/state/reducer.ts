@@ -119,7 +119,6 @@ export type Action =
   | { type: "panel.closed" }
   | { type: "full-frame.toggled" }
   | { type: "focus-peaking.toggled" }
-  | { type: "focus-peaking.disabled" }
   | { type: "focus-peaking.threshold"; threshold: number };
 
 export const initialState: AppState = {
@@ -150,7 +149,7 @@ export const initialState: AppState = {
   inspect: "both",
   panel: "none",
   fullFrame: false,
-  focusPeaking: { enabled: false, threshold: 96 },
+  focusPeaking: { enabled: true, threshold: 96 },
 };
 
 function withCameraFocus(runtime: DeviceRuntime, focus: CameraFocusStatus): DeviceRuntime {
@@ -185,10 +184,6 @@ function isStaleCaptureSnapshot(current: CaptureStatus | null, incoming: Capture
   );
 }
 
-function captureIsRecording(capture: CaptureStatus | null): boolean {
-  return Boolean(capture?.snapshot.active_recording);
-}
-
 function clampPeakingThreshold(threshold: number): number {
   if (!Number.isFinite(threshold)) {
     return initialState.focusPeaking.threshold;
@@ -209,13 +204,9 @@ export function reduceState(state: AppState, action: Action): AppState {
       if (isStaleCaptureSnapshot(state.capture, action.payload)) {
         return state;
       }
-      const focusPeaking = action.payload.snapshot.active_recording
-        ? { ...state.focusPeaking, enabled: false }
-        : state.focusPeaking;
       return {
         ...state,
         capture: action.payload,
-        focusPeaking,
         safeSwapReceipt: receiptMatchesCapture(state.safeSwapReceipt, action.payload)
           ? state.safeSwapReceipt
           : null,
@@ -350,11 +341,9 @@ export function reduceState(state: AppState, action: Action): AppState {
         ...state,
         focusPeaking: {
           ...state.focusPeaking,
-          enabled: !state.focusPeaking.enabled && !captureIsRecording(state.capture),
+          enabled: !state.focusPeaking.enabled,
         },
       };
-    case "focus-peaking.disabled":
-      return { ...state, focusPeaking: { ...state.focusPeaking, enabled: false } };
     case "focus-peaking.threshold":
       return {
         ...state,

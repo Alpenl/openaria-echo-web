@@ -165,14 +165,10 @@ export class EchoStore {
           }
         })
         .catch((error) => console.warn(error));
-      if (device.capabilities.network_mutation) {
-        void deviceApi
-          .getNetwork()
-          .then((network) => this.dispatch({ type: "network.loaded", payload: network }))
-          .catch((error) => console.warn(error));
-      } else {
-        this.dispatch({ type: "network.loaded", payload: null });
-      }
+      void deviceApi
+        .getNetwork()
+        .then((network) => this.dispatch({ type: "network.loaded", payload: network }))
+        .catch((error) => console.warn(error));
       void this.refreshSessions();
       return true;
     } catch (error) {
@@ -450,10 +446,6 @@ export class EchoStore {
         .getDevice()
         .then(async (device) => {
           this.dispatch({ type: "device.loaded", payload: device });
-          if (!device.capabilities.network_mutation) {
-            this.dispatch({ type: "network.loaded", payload: null });
-            return;
-          }
           const network = await deviceApi.getNetwork();
           this.dispatch({ type: "network.loaded", payload: network });
         })
@@ -559,7 +551,13 @@ export class EchoStore {
     }
     if (event.type === "state") {
       if (isCaptureStateEventPayload(event.data)) {
+        const beforeRefresh = this.state.capture;
         await this.refreshCapture();
+        const stoppedSessionId = sealedTerminalSessionId(beforeRefresh, this.state.capture);
+        if (stoppedSessionId) {
+          await this.refreshRelatedResources();
+          await this.refreshSessionsUntilVisible(stoppedSessionId);
+        }
       }
       return;
     }

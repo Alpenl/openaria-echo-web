@@ -367,6 +367,22 @@ function broadcastStateEvent(valid, displayName) {
   broadcastEvent(captureEvent("state", eventData, recording.recording_state.session_id));
 }
 
+function broadcastTerminalStateEvent() {
+  const recording = fixture.snapshot.snapshot.active_recording;
+  if (!recording) {
+    throw new Error("fixture 未建立终态 state 事件录制");
+  }
+  const sessionId = recording.recording_state.session_id;
+  const eventData = {
+    schema: "ylx.capture-state-event.v2",
+    state: "verifying",
+    volume_id: recording.recording_state.storage.volume_id,
+    generation_id: recording.generation_id,
+  };
+  setIdleAfterUserStop();
+  broadcastEvent(captureEvent("state", eventData, sessionId));
+}
+
 /** @param {ReturnType<typeof captureEvent>} event */
 function broadcastEvent(event) {
   for (const response of eventResponses) {
@@ -709,6 +725,9 @@ function advanceProgress() {
   if (!current) {
     return;
   }
+  const repeated = current.progress.elapsed_seconds >= 12.4;
+  const elapsedSeconds = repeated ? 12.6 : 12.4;
+  const capturedFrames = repeated ? 756 : 744;
   fixture.snapshot.source_revision += 1;
   fixture.snapshot.snapshot = {
     ...fixture.snapshot.snapshot,
@@ -719,8 +738,8 @@ function advanceProgress() {
         state_revision: fixture.snapshot.source_revision,
         updated_at: "2026-08-12T02:25:13Z",
         progress: {
-          elapsed_seconds: 12.4,
-          captured_frames: 744,
+          elapsed_seconds: elapsedSeconds,
+          captured_frames: capturedFrames,
           bytes_written: 44_040_192,
         },
       },
@@ -732,8 +751,8 @@ function advanceProgress() {
       {
         schema: "ylx.capture-progress-event.v2",
         phase: "recording",
-        elapsed_seconds: 12.4,
-        completed_units: 744,
+        elapsed_seconds: elapsedSeconds,
+        completed_units: capturedFrames,
         total_units: null,
         unit: "frames",
       },
@@ -964,6 +983,12 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/__fixture/state-event" && request.method === "POST") {
     const body = /** @type {{displayName?: string, valid?: boolean}} */ (await readJson(request));
     broadcastStateEvent(body.valid !== false, body.displayName ?? "其他客户端录制");
+    response.writeHead(204).end();
+    return;
+  }
+
+  if (url.pathname === "/__fixture/terminal-state-event" && request.method === "POST") {
+    broadcastTerminalStateEvent();
     response.writeHead(204).end();
     return;
   }

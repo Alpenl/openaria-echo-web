@@ -84,11 +84,13 @@ function statusText(state: AppState): string {
   if (state.networkPending) {
     return "正在应用网络配置";
   }
-  if (state.device?.capabilities.network_mutation !== true) {
-    return "当前 Device API 未开放网络配置";
-  }
   if (state.networkResult?.ok) {
     return `已应用 ${NETWORK_MODE_LABELS[state.networkResult.mode ?? ""] ?? "网络配置"}`;
+  }
+  if (state.device?.capabilities.network_mutation !== true) {
+    return state.networkStatus
+      ? "网络状态只读；配置修改未开放"
+      : "网络状态不可用；配置修改未开放";
   }
   if (state.networkStatus) {
     const { wifi_interface, ethernet_interface } = state.networkStatus.capabilities;
