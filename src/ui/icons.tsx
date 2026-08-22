@@ -53,6 +53,13 @@ export const SearchIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const RefreshIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M19 8a7.5 7.5 0 10.5 7" />
+    <path d="M19 3v5h-5" />
+  </Icon>
+);
+
 export const ExpandIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />

@@ -3,6 +3,23 @@ import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 
 const PEAK_COLOR = [232, 88, 255, 230] as const;
+const PEAKING_PIXEL_BUDGET = 512 * 1024;
+
+export function fitPeakingDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+): { width: number; height: number } {
+  const width = Math.max(0, Math.floor(sourceWidth));
+  const height = Math.max(0, Math.floor(sourceHeight));
+  if (width * height <= PEAKING_PIXEL_BUDGET) {
+    return { width, height };
+  }
+  const scale = Math.sqrt(PEAKING_PIXEL_BUDGET / (width * height));
+  return {
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
+  };
+}
 
 function clearCanvas(canvas: HTMLCanvasElement | null): void {
   if (!canvas) {
@@ -25,12 +42,11 @@ function renderPeakingMask(
   image: HTMLImageElement,
   threshold: number,
 ): number {
-  const width = image.naturalWidth;
-  const height = image.naturalHeight;
-  if (width < 3 || height < 3) {
+  if (image.naturalWidth < 3 || image.naturalHeight < 3) {
     clearCanvas(canvas);
     return 0;
   }
+  const { width, height } = fitPeakingDimensions(image.naturalWidth, image.naturalHeight);
 
   canvas.width = width;
   canvas.height = height;
@@ -86,6 +102,11 @@ export function FocusPeakingOverlay({
   const generationRef = useRef(0);
   const latestUrlRef = useRef<string | null>(null);
   const thresholdRef = useRef(state.focusPeaking.threshold);
+  const requestedEnabledRef = useRef(state.focusPeaking.enabled);
+  const frameUrlRef = useRef(frameUrl);
+
+  requestedEnabledRef.current = state.focusPeaking.enabled;
+  frameUrlRef.current = frameUrl;
 
   function cancelAndClear(): void {
     generationRef.current += 1;
@@ -95,32 +116,40 @@ export function FocusPeakingOverlay({
   }
 
   useEffect(() => {
-    const stopInBackground = () => {
+    const followVisibility = () => {
       if (document.hidden) {
         cancelAndClear();
-        store.dispatch({ type: "focus-peaking.disabled" });
+        return;
+      }
+      const currentFrame = frameUrlRef.current;
+      if (requestedEnabledRef.current && currentFrame) {
+        queueFrame(currentFrame);
       }
     };
-    document.addEventListener("visibilitychange", stopInBackground);
-    return () => document.removeEventListener("visibilitychange", stopInBackground);
+    document.addEventListener("visibilitychange", followVisibility);
+    return () => document.removeEventListener("visibilitychange", followVisibility);
   }, []);
 
   useLayoutEffect(() => {
     thresholdRef.current = state.focusPeaking.threshold;
 
-    if (!state.focusPeaking.enabled || !frameUrl) {
+    if (!state.focusPeaking.enabled || !frameUrl || document.hidden) {
       cancelAndClear();
       return;
     }
 
+    queueFrame(frameUrl);
+  }, [frameUrl, state.focusPeaking.enabled, state.focusPeaking.threshold]);
+
+  function queueFrame(url: string): void {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     enabledRef.current = true;
-    latestUrlRef.current = frameUrl;
+    latestUrlRef.current = url;
     if (!busyRef.current) {
       void drainLatestFrame(generation);
     }
-  }, [frameUrl, state.focusPeaking.enabled, state.focusPeaking.threshold]);
+  }
 
   async function drainLatestFrame(generation: number): Promise<void> {
     busyRef.current = true;
@@ -166,9 +195,6 @@ export function FocusPeakingOverlay({
 }
 
 export function FocusPeakingControl({ state }: { state: AppState }) {
-  const disabled = Boolean(state.capture?.snapshot.active_recording);
-  const disabledReason = "录制期间自动关闭峰值对焦，避免取景处理占用浏览器资源";
-
   return (
     <div class="focus-peaking-control" data-enabled={String(state.focusPeaking.enabled)}>
       <button
@@ -176,9 +202,7 @@ export function FocusPeakingControl({ state }: { state: AppState }) {
         role="switch"
         aria-label="峰值对焦"
         aria-checked={state.focusPeaking.enabled}
-        aria-describedby={disabled ? "focus-peaking-disabled-reason" : undefined}
-        disabled={disabled}
-        title={disabled ? disabledReason : "峰值对焦"}
+        title="峰值对焦"
         onClick={() => store.dispatch({ type: "focus-peaking.toggled" })}
       >
         PEAK
@@ -189,7 +213,7 @@ export function FocusPeakingControl({ state }: { state: AppState }) {
         max="255"
         step="1"
         value={state.focusPeaking.threshold}
-        disabled={!state.focusPeaking.enabled || disabled}
+        disabled={!state.focusPeaking.enabled}
         aria-label="峰值对焦阈值"
         onInput={(event) =>
           store.dispatch({
@@ -199,9 +223,6 @@ export function FocusPeakingControl({ state }: { state: AppState }) {
         }
       />
       <output aria-hidden="true">{state.focusPeaking.threshold}</output>
-      <span id="focus-peaking-disabled-reason" class="visually-hidden">
-        {disabledReason}
-      </span>
     </div>
   );
 }

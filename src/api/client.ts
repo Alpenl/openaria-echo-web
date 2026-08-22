@@ -18,8 +18,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "6740c9875ee6dcf1564062b3b7e63d995d4c01cdd1e3fadcc49bd54b13ffc899",
-      bytes: 75767,
+      sha256: "d8a440b45911a48fc964ff431a101503283969c1eea41858c267effd1be50e99",
+      bytes: 79250,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",

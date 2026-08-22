@@ -2,7 +2,7 @@ import type { AppState, SessionFilter } from "../state/reducer";
 import { store } from "../state/store";
 import type { SessionSummary } from "../api/types";
 import { formatGiB, formatSeconds, verdictLabel } from "./format";
-import { CloseIcon, SearchIcon } from "./icons";
+import { CloseIcon, RefreshIcon, SearchIcon } from "./icons";
 import { SessionDetail } from "./SessionDetail";
 
 const FILTERS: Array<{ id: SessionFilter; label: string; tone?: "caution" }> = [
@@ -49,6 +49,16 @@ export function SessionsPanel({ state }: { state: AppState }) {
         <span class="eyebrow">SESSIONS</span>
         <span class="panel-title">会话台账</span>
         <span style="flex-grow:1" />
+        <button
+          type="button"
+          class="icon-button"
+          aria-label="刷新会话"
+          title="刷新会话"
+          disabled={loading}
+          onClick={() => void store.refreshSessions()}
+        >
+          <RefreshIcon />
+        </button>
         <button
           type="button"
           class="icon-button"

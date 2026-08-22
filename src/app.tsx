@@ -12,6 +12,9 @@ import { SessionsPanel } from "./ui/SessionsPanel";
 import { Stage, StageOverlays } from "./ui/Stage";
 import { TopBar } from "./ui/TopBar";
 
+const CAPTURE_RECONCILE_INTERVAL_MS = 2000;
+const PANEL_RECONCILE_INTERVAL_MS = 5000;
+
 /**
  * 窄屏上并置双目每只眼只剩百来像素，等于放弃预览；所以窄屏默认单眼取景，
  * 宽屏默认双目。这只是首选值，用户随时可以在取景控件里改。
@@ -37,9 +40,45 @@ export function App() {
       return;
     }
     started.current = true;
+    let captureReconcileTimer: number | null = null;
+    let panelReconcileTimer: number | null = null;
+
+    const reconcileCapture = () => {
+      if (!document.hidden) {
+        void store.reconcileCapture();
+      }
+    };
+    const reconcilePanel = () => {
+      if (!document.hidden) {
+        void store.refreshOpenPanel();
+      }
+    };
+    const reconcileVisibleState = () => {
+      reconcileCapture();
+      reconcilePanel();
+    };
+    const followVisibility = () => {
+      if (!document.hidden) {
+        reconcileVisibleState();
+      }
+    };
+    const startReconciliation = () => {
+      if (captureReconcileTimer !== null) {
+        return;
+      }
+      captureReconcileTimer = window.setInterval(
+        reconcileCapture,
+        CAPTURE_RECONCILE_INTERVAL_MS,
+      );
+      panelReconcileTimer = window.setInterval(reconcilePanel, PANEL_RECONCILE_INTERVAL_MS);
+      window.addEventListener("focus", reconcileVisibleState);
+      window.addEventListener("online", reconcileVisibleState);
+      document.addEventListener("visibilitychange", followVisibility);
+    };
     void store.loadInitialState().then((ok) => {
       if (ok) {
         startLiveConnections();
+        startReconciliation();
       }
     });
 
@@ -78,6 +117,15 @@ export function App() {
     window.addEventListener("pagehide", stop, { once: true });
     return () => {
       window.removeEventListener("pagehide", stop);
+      window.removeEventListener("focus", reconcileVisibleState);
+      window.removeEventListener("online", reconcileVisibleState);
+      document.removeEventListener("visibilitychange", followVisibility);
+      if (captureReconcileTimer !== null) {
+        window.clearInterval(captureReconcileTimer);
+      }
+      if (panelReconcileTimer !== null) {
+        window.clearInterval(panelReconcileTimer);
+      }
       stop();
     };
   }, []);

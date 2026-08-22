@@ -5,18 +5,27 @@ import { readFileSync } from "node:fs";
 
 import { API_ROOT, DEVICE_API_CONSUMER_SUPPORT, deviceApi } from "../src/api/client.ts";
 import { initialState, reduceState } from "../src/state/reducer.ts";
+import { fitPeakingDimensions } from "../src/ui/FocusPeaking.tsx";
 
 const authorityEpoch = "4fa85f64-5717-4562-b3fc-2c963f66afa6";
 const consumerSupportManifest = JSON.parse(
   readFileSync(new URL("../contracts/ylx-device-api-support.json", import.meta.url), "utf8"),
 );
 
+test("峰值对焦把 4K 双目预览限制在有界像素预算内", () => {
+  const dimensions = fitPeakingDimensions(3840, 1080);
+
+  expect(dimensions.width / dimensions.height).toBeCloseTo(3840 / 1080, 2);
+  expect(dimensions.width * dimensions.height).toBeLessThanOrEqual(512 * 1024);
+  expect(dimensions.width).toBeLessThan(3840);
+});
+
 test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "6740c9875ee6dcf1564062b3b7e63d995d4c01cdd1e3fadcc49bd54b13ffc899",
-    bytes: 75767,
+    sha256: "d8a440b45911a48fc964ff431a101503283969c1eea41858c267effd1be50e99",
+    bytes: 79250,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",

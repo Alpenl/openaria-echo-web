@@ -72,6 +72,7 @@ const previewJpeg = Buffer.from(
  * @property {boolean} sessionsVolumeUnavailable
  * @property {boolean} networkUnavailable
  * @property {number} sessionsDelayMs
+ * @property {number} sessionPublicationDelayMs
  * @property {number} eventSnapshotDelayMs
  * @property {number} previewDelayMs
  * @property {number} previewRequests
@@ -269,6 +270,7 @@ function makeFixture() {
     sessionsVolumeUnavailable: false,
     networkUnavailable: false,
     sessionsDelayMs: 0,
+    sessionPublicationDelayMs: 0,
     eventSnapshotDelayMs: 0,
     previewDelayMs: 20,
     previewRequests: 0,
@@ -365,6 +367,22 @@ function broadcastStateEvent(valid, displayName) {
         generation_id: recording.generation_id,
       };
   broadcastEvent(captureEvent("state", eventData, recording.recording_state.session_id));
+}
+
+function broadcastTerminalStateEvent() {
+  const recording = fixture.snapshot.snapshot.active_recording;
+  if (!recording) {
+    throw new Error("fixture 未建立终态 state 事件录制");
+  }
+  const sessionId = recording.recording_state.session_id;
+  const eventData = {
+    schema: "ylx.capture-state-event.v2",
+    state: "verifying",
+    volume_id: recording.recording_state.storage.volume_id,
+    generation_id: recording.generation_id,
+  };
+  setIdleAfterUserStop();
+  broadcastEvent(captureEvent("state", eventData, sessionId));
 }
 
 /** @param {ReturnType<typeof captureEvent>} event */
@@ -626,11 +644,12 @@ function setFinalizing() {
 function setIdleAfterUserStop() {
   const current = fixture.snapshot.snapshot.active_recording?.recording_state;
   if (current) {
-    fixture.sessions.items.unshift({
+    const targetFixture = fixture;
+    const session = {
       session_id: current.session_id,
       producer_outcome: "sealed",
       take_id: current.take_id,
-      take_sequence: fixture.sessions.items.length + 1,
+      take_sequence: targetFixture.sessions.items.length + 1,
       continuation_of: null,
       display_name: current.display_name,
       device: current.device,
@@ -639,7 +658,12 @@ function setIdleAfterUserStop() {
       duration_seconds: Math.max(1, Math.round(current.progress.elapsed_seconds)),
       total_bytes: Math.max(64 * 1024 * 1024, current.progress.bytes_written),
       verification: null,
-    });
+    };
+    if (targetFixture.sessionPublicationDelayMs > 0) {
+      setTimeout(() => targetFixture.sessions.items.unshift(session), targetFixture.sessionPublicationDelayMs);
+    } else {
+      targetFixture.sessions.items.unshift(session);
+    }
   }
   fixture.snapshot.source_revision += 1;
   fixture.snapshot.snapshot = {
@@ -709,6 +733,9 @@ function advanceProgress() {
   if (!current) {
     return;
   }
+  const repeated = current.progress.elapsed_seconds >= 12.4;
+  const elapsedSeconds = repeated ? 12.6 : 12.4;
+  const capturedFrames = repeated ? 756 : 744;
   fixture.snapshot.source_revision += 1;
   fixture.snapshot.snapshot = {
     ...fixture.snapshot.snapshot,
@@ -719,8 +746,8 @@ function advanceProgress() {
         state_revision: fixture.snapshot.source_revision,
         updated_at: "2026-08-12T02:25:13Z",
         progress: {
-          elapsed_seconds: 12.4,
-          captured_frames: 744,
+          elapsed_seconds: elapsedSeconds,
+          captured_frames: capturedFrames,
           bytes_written: 44_040_192,
         },
       },
@@ -732,8 +759,8 @@ function advanceProgress() {
       {
         schema: "ylx.capture-progress-event.v2",
         phase: "recording",
-        elapsed_seconds: 12.4,
-        completed_units: 744,
+        elapsed_seconds: elapsedSeconds,
+        completed_units: capturedFrames,
         total_units: null,
         unit: "frames",
       },
@@ -837,7 +864,8 @@ function startNewAuthorityRecording() {
   broadcastSnapshot();
 }
 
-function mutateRelatedResources() {
+/** @param {boolean} [broadcast] */
+function mutateRelatedResources(broadcast = true) {
   fixture.device.storage.available_bytes = 64 * gibibyte;
   fixture.sessions.items.unshift({
     session_id: "01989f6a-2c00-7a1b-8c2d-3e4f50617299",
@@ -854,7 +882,9 @@ function mutateRelatedResources() {
     verification: null,
   });
   fixture.snapshot.source_revision += 1;
-  broadcastSnapshot();
+  if (broadcast) {
+    broadcastSnapshot();
+  }
 }
 
 /** @param {IncomingMessage} request @param {ServerResponse} response */
@@ -888,7 +918,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/__fixture/config" && request.method === "POST") {
-    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, sessionsDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
+    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
       await readJson(request)
     );
     if (typeof config.apiVersion === "string") {
@@ -937,6 +967,9 @@ const server = createServer(async (request, response) => {
     if (Number.isFinite(config.sessionsDelayMs)) {
       fixture.sessionsDelayMs = Number(config.sessionsDelayMs);
     }
+    if (Number.isFinite(config.sessionPublicationDelayMs)) {
+      fixture.sessionPublicationDelayMs = Number(config.sessionPublicationDelayMs);
+    }
     if (Number.isFinite(config.eventSnapshotDelayMs)) {
       fixture.eventSnapshotDelayMs = Number(config.eventSnapshotDelayMs);
     }
@@ -964,6 +997,12 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/__fixture/state-event" && request.method === "POST") {
     const body = /** @type {{displayName?: string, valid?: boolean}} */ (await readJson(request));
     broadcastStateEvent(body.valid !== false, body.displayName ?? "其他客户端录制");
+    response.writeHead(204).end();
+    return;
+  }
+
+  if (url.pathname === "/__fixture/terminal-state-event" && request.method === "POST") {
+    broadcastTerminalStateEvent();
     response.writeHead(204).end();
     return;
   }
@@ -1012,6 +1051,12 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === "/__fixture/related-resources" && request.method === "POST") {
     mutateRelatedResources();
+    response.writeHead(204).end();
+    return;
+  }
+
+  if (url.pathname === "/__fixture/related-resources-silent" && request.method === "POST") {
+    mutateRelatedResources(false);
     response.writeHead(204).end();
     return;
   }
