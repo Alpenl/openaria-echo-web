@@ -61,13 +61,15 @@ export function TopBar({ state }: { state: AppState }) {
         aria-pressed={state.panel === "sessions"}
         aria-label="会话台账"
         title="会话台账"
-        onClick={() =>
+        onClick={() => {
+          const opening = state.panel !== "sessions";
           store.dispatch(
-            state.panel === "sessions"
-              ? { type: "panel.closed" }
-              : { type: "panel.opened", panel: "sessions" },
-          )
-        }
+            opening ? { type: "panel.opened", panel: "sessions" } : { type: "panel.closed" },
+          );
+          if (opening) {
+            void store.refreshSessions();
+          }
+        }}
       >
         <SessionsIcon />
       </button>
@@ -77,13 +79,15 @@ export function TopBar({ state }: { state: AppState }) {
         aria-pressed={state.panel === "device"}
         aria-label="设备与链路"
         title="设备与链路"
-        onClick={() =>
+        onClick={() => {
+          const opening = state.panel !== "device";
           store.dispatch(
-            state.panel === "device"
-              ? { type: "panel.closed" }
-              : { type: "panel.opened", panel: "device" },
-          )
-        }
+            opening ? { type: "panel.opened", panel: "device" } : { type: "panel.closed" },
+          );
+          if (opening) {
+            void store.refreshNetwork();
+          }
+        }}
       >
         <DeviceIcon />
       </button>

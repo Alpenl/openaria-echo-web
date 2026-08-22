@@ -72,6 +72,7 @@ const previewJpeg = Buffer.from(
  * @property {boolean} sessionsVolumeUnavailable
  * @property {boolean} networkUnavailable
  * @property {number} sessionsDelayMs
+ * @property {number} sessionPublicationDelayMs
  * @property {number} eventSnapshotDelayMs
  * @property {number} previewDelayMs
  * @property {number} previewRequests
@@ -269,6 +270,7 @@ function makeFixture() {
     sessionsVolumeUnavailable: false,
     networkUnavailable: false,
     sessionsDelayMs: 0,
+    sessionPublicationDelayMs: 0,
     eventSnapshotDelayMs: 0,
     previewDelayMs: 20,
     previewRequests: 0,
@@ -642,11 +644,12 @@ function setFinalizing() {
 function setIdleAfterUserStop() {
   const current = fixture.snapshot.snapshot.active_recording?.recording_state;
   if (current) {
-    fixture.sessions.items.unshift({
+    const targetFixture = fixture;
+    const session = {
       session_id: current.session_id,
       producer_outcome: "sealed",
       take_id: current.take_id,
-      take_sequence: fixture.sessions.items.length + 1,
+      take_sequence: targetFixture.sessions.items.length + 1,
       continuation_of: null,
       display_name: current.display_name,
       device: current.device,
@@ -655,7 +658,12 @@ function setIdleAfterUserStop() {
       duration_seconds: Math.max(1, Math.round(current.progress.elapsed_seconds)),
       total_bytes: Math.max(64 * 1024 * 1024, current.progress.bytes_written),
       verification: null,
-    });
+    };
+    if (targetFixture.sessionPublicationDelayMs > 0) {
+      setTimeout(() => targetFixture.sessions.items.unshift(session), targetFixture.sessionPublicationDelayMs);
+    } else {
+      targetFixture.sessions.items.unshift(session);
+    }
   }
   fixture.snapshot.source_revision += 1;
   fixture.snapshot.snapshot = {
@@ -856,7 +864,8 @@ function startNewAuthorityRecording() {
   broadcastSnapshot();
 }
 
-function mutateRelatedResources() {
+/** @param {boolean} [broadcast] */
+function mutateRelatedResources(broadcast = true) {
   fixture.device.storage.available_bytes = 64 * gibibyte;
   fixture.sessions.items.unshift({
     session_id: "01989f6a-2c00-7a1b-8c2d-3e4f50617299",
@@ -873,7 +882,9 @@ function mutateRelatedResources() {
     verification: null,
   });
   fixture.snapshot.source_revision += 1;
-  broadcastSnapshot();
+  if (broadcast) {
+    broadcastSnapshot();
+  }
 }
 
 /** @param {IncomingMessage} request @param {ServerResponse} response */
@@ -907,7 +918,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/__fixture/config" && request.method === "POST") {
-    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, sessionsDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
+    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
       await readJson(request)
     );
     if (typeof config.apiVersion === "string") {
@@ -955,6 +966,9 @@ const server = createServer(async (request, response) => {
     }
     if (Number.isFinite(config.sessionsDelayMs)) {
       fixture.sessionsDelayMs = Number(config.sessionsDelayMs);
+    }
+    if (Number.isFinite(config.sessionPublicationDelayMs)) {
+      fixture.sessionPublicationDelayMs = Number(config.sessionPublicationDelayMs);
     }
     if (Number.isFinite(config.eventSnapshotDelayMs)) {
       fixture.eventSnapshotDelayMs = Number(config.eventSnapshotDelayMs);
@@ -1037,6 +1051,12 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === "/__fixture/related-resources" && request.method === "POST") {
     mutateRelatedResources();
+    response.writeHead(204).end();
+    return;
+  }
+
+  if (url.pathname === "/__fixture/related-resources-silent" && request.method === "POST") {
+    mutateRelatedResources(false);
     response.writeHead(204).end();
     return;
   }

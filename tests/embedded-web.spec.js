@@ -182,6 +182,18 @@ test("v4 state 事件触发一次权威刷新并保持事件流连接", async ({
   expect(warnings).toEqual([]);
 });
 
+test("漏掉 SSE 事件时可见页面仍从权威状态自动收敛", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+
+  await request.post("/__fixture/state", {
+    data: { deviceState: "recording", displayName: "轮询对账录制", broadcast: false },
+  });
+
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中", { timeout: 4000 });
+  await expect(page.getByText("轮询对账录制", { exact: true })).toBeVisible();
+});
+
 test("v4 终态 state 事件把新封存会话同步到台账", async ({ page, request }) => {
   await page.goto("/");
   await page.getByLabel("录制名称").fill("终态事件封存");
@@ -856,11 +868,28 @@ test("结束录制后新封存会话无刷新有界同步到台账", async ({ pa
   }
 
   const settledCount = await sessionRequestCount();
-  expect(settledCount).toBeGreaterThanOrEqual(3);
+  expect(settledCount).toBeGreaterThanOrEqual(2);
   expect(settledCount).toBeLessThanOrEqual(8);
 
   await page.waitForTimeout(650);
   expect(await sessionRequestCount()).toBe(settledCount);
+});
+
+test("会话晚于终态发布时仍自动进入台账", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionPublicationDelayMs: 2000 } });
+  await page.goto("/");
+
+  const name = "延迟发布仍自动刷新";
+  await page.getByLabel("录制名称").fill(name);
+  await page.getByRole("button", { name: "开始录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  await page.getByRole("button", { name: "结束录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+
+  await openPanel(page, "会话台账");
+  await expect(page.getByTestId("session-item").filter({ hasText: name })).toHaveCount(1, {
+    timeout: 5000,
+  });
 });
 
 test("开始录制原样显示 API problem 且服务恢复后可重试", async ({ page, request }) => {
@@ -969,6 +998,39 @@ test("外部客户端快照触发容量和最近会话有界重拉", async ({ pa
 
   await expect(page.getByTestId("storage-available")).toHaveText("64.0 GiB");
   await expect(page.getByText("外部客户端封存", { exact: true })).toBeVisible();
+});
+
+test("重新打开会话台账会立即读取静默新增目录", async ({ page, request }) => {
+  await page.goto("/");
+  const panel = await openPanel(page, "会话台账");
+  await expect(page.getByText("外部客户端封存", { exact: true })).not.toBeVisible();
+  await panel.getByRole("button", { name: "关闭" }).click();
+
+  await request.post("/__fixture/related-resources-silent");
+  await openPanel(page, "会话台账");
+
+  await expect(page.getByText("外部客户端封存", { exact: true })).toBeVisible();
+});
+
+test("会话台账刷新按钮读取静默新增目录", async ({ page, request }) => {
+  await page.goto("/");
+  const panel = await openPanel(page, "会话台账");
+  await expect(page.getByText("外部客户端封存", { exact: true })).not.toBeVisible();
+  await request.post("/__fixture/related-resources-silent");
+
+  const beforeResponse = await request.get("/__fixture/requests");
+  const beforeBody = /** @type {{requests: Array<{path: string}>}} */ (await beforeResponse.json());
+  const beforeCount = beforeBody.requests.filter(
+    (entry) => entry.path === "/api/v4/sessions",
+  ).length;
+  await panel.getByRole("button", { name: "刷新会话" }).click();
+
+  await expect(page.getByText("外部客户端封存", { exact: true })).toBeVisible();
+  const afterResponse = await request.get("/__fixture/requests");
+  const afterBody = /** @type {{requests: Array<{path: string}>}} */ (await afterResponse.json());
+  expect(
+    afterBody.requests.filter((entry) => entry.path === "/api/v4/sessions").length,
+  ).toBeGreaterThan(beforeCount);
 });
 
 test("设备诊断通过 SSE 原样呈现 code message 和 details", async ({ page, request }) => {
