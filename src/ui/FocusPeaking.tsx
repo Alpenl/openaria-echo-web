@@ -3,6 +3,23 @@ import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 
 const PEAK_COLOR = [232, 88, 255, 230] as const;
+const PEAKING_PIXEL_BUDGET = 512 * 1024;
+
+export function fitPeakingDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+): { width: number; height: number } {
+  const width = Math.max(0, Math.floor(sourceWidth));
+  const height = Math.max(0, Math.floor(sourceHeight));
+  if (width * height <= PEAKING_PIXEL_BUDGET) {
+    return { width, height };
+  }
+  const scale = Math.sqrt(PEAKING_PIXEL_BUDGET / (width * height));
+  return {
+    width: Math.max(1, Math.floor(width * scale)),
+    height: Math.max(1, Math.floor(height * scale)),
+  };
+}
 
 function clearCanvas(canvas: HTMLCanvasElement | null): void {
   if (!canvas) {
@@ -25,12 +42,11 @@ function renderPeakingMask(
   image: HTMLImageElement,
   threshold: number,
 ): number {
-  const width = image.naturalWidth;
-  const height = image.naturalHeight;
-  if (width < 3 || height < 3) {
+  if (image.naturalWidth < 3 || image.naturalHeight < 3) {
     clearCanvas(canvas);
     return 0;
   }
+  const { width, height } = fitPeakingDimensions(image.naturalWidth, image.naturalHeight);
 
   canvas.width = width;
   canvas.height = height;
