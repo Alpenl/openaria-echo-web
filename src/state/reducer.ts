@@ -4,7 +4,6 @@ import type {
   DeviceDescriptor,
   DeviceRuntime,
   Diagnostic,
-  NetworkApplyResult,
   NetworkStatus,
   SafeSwapState,
   SessionDetail,
@@ -16,20 +15,10 @@ export type ConnectionState = "connecting" | "connected" | "disconnected";
 export type InspectMode = "both" | "left" | "right";
 export type PanelId = "none" | "sessions" | "device";
 export type SessionFilter = "all" | "usable" | "unsuccessful";
-export type NetworkMode = "wifi-client" | "hotspot" | "ethernet-dhcp" | "ethernet-static";
 
 export interface FocusPeakingState {
   enabled: boolean;
   threshold: number;
-}
-
-export interface NetworkDraft {
-  mode: NetworkMode;
-  ssid: string;
-  psk: string;
-  address: string;
-  gateway: string;
-  dns: string;
 }
 
 export interface VisibleError {
@@ -61,11 +50,6 @@ export interface AppState {
   device: DeviceDescriptor | null;
   capture: CaptureStatus | null;
   networkStatus: NetworkStatus | null;
-  networkResult: NetworkApplyResult | null;
-  networkPending: boolean;
-  /** 网络变更是唯一需要显式确认的命令：它可能切断操作者自己的链路。 */
-  networkArmed: boolean;
-  networkDraft: NetworkDraft;
   safeSwapReceipt: SafeSwapState | null;
   sessions: SessionsState;
   selected: SelectedSession | null;
@@ -91,11 +75,6 @@ export type Action =
   | { type: "camera-focus.settled" }
   | { type: "camera-focus.updated"; payload: CameraFocusStatus }
   | { type: "network.loaded"; payload: NetworkStatus | null }
-  | { type: "network.draft"; patch: Partial<NetworkDraft> }
-  | { type: "network.armed"; armed: boolean }
-  | { type: "network.pending" }
-  | { type: "network.settled" }
-  | { type: "network.succeeded"; payload: NetworkApplyResult }
   | { type: "error.cleared" }
   | { type: "safe-swap.received"; payload: SafeSwapState }
   | { type: "safe-swap.cleared" }
@@ -126,10 +105,6 @@ export const initialState: AppState = {
   device: null,
   capture: null,
   networkStatus: null,
-  networkResult: null,
-  networkPending: false,
-  networkArmed: false,
-  networkDraft: { mode: "wifi-client", ssid: "", psk: "", address: "", gateway: "", dns: "" },
   safeSwapReceipt: null,
   sessions: {
     items: [],
@@ -243,21 +218,6 @@ export function reduceState(state: AppState, action: Action): AppState {
       };
     case "network.loaded":
       return { ...state, networkStatus: action.payload };
-    case "network.draft":
-      // 改动草稿即解除武装：确认过的后果不能顺延到另一份配置。
-      return {
-        ...state,
-        networkDraft: { ...state.networkDraft, ...action.patch },
-        networkArmed: false,
-      };
-    case "network.armed":
-      return { ...state, networkArmed: action.armed };
-    case "network.pending":
-      return { ...state, networkPending: true, networkArmed: false, error: null };
-    case "network.settled":
-      return { ...state, networkPending: false };
-    case "network.succeeded":
-      return { ...state, networkResult: action.payload, error: null };
     case "error.cleared":
       return { ...state, error: null };
     case "safe-swap.received":

@@ -567,6 +567,24 @@ async function readJson(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+const SECRET_BODY_KEYS = new Set(["psk", "password", "secret", "token"]);
+
+/** @param {unknown} value @returns {unknown} */
+function redactSecrets(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactSecrets(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      SECRET_BODY_KEYS.has(key.toLowerCase()) ? "<redacted>" : redactSecrets(entry),
+    ]),
+  );
+}
+
 /** @param {string} displayName */
 function setRecording(displayName) {
   fixture.snapshot.source_revision += 1;
@@ -1172,7 +1190,7 @@ const server = createServer(async (request, response) => {
         await readJson(request)
       );
       if (apiRequest) {
-        apiRequest.body = body;
+        apiRequest.body = redactSecrets(body);
       }
       const hasValue = Object.hasOwn(body, "value");
       const hasAuto = Object.hasOwn(body, "auto_enabled");
@@ -1223,7 +1241,7 @@ const server = createServer(async (request, response) => {
         await readJson(request)
       );
       if (apiRequest) {
-        apiRequest.body = body;
+        apiRequest.body = redactSecrets(body);
       }
       const mode = body.mode;
       const validWifi =

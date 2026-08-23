@@ -46,6 +46,16 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   );
 });
 
+test("全局状态不保存网络 secret 草稿", () => {
+  const serialized = JSON.stringify(initialState).toLowerCase();
+
+  expect(serialized).not.toContain("psk");
+  expect(serialized).not.toContain("password");
+  expect(serialized).not.toContain("secret");
+  expect(serialized).not.toContain("token");
+  expect(Object.keys(initialState)).not.toContain("networkDraft");
+});
+
 const replacementFocus = {
   schema: "ylx.camera-focus.v1",
   value: 0,

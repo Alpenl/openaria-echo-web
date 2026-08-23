@@ -273,8 +273,6 @@ export const deviceApi = Object.freeze({
       "/camera/focus",
       commandInit({ schema: "ylx.camera-focus-set.v1", ...request }),
     ),
-  setNetwork: (request: Record<string, unknown>) =>
-    requestJson<unknown>("/network", commandInit({ schema: "ylx.network-apply.v1", ...request })),
 });
 
 export async function getLatestPreview(signal: AbortSignal): Promise<Blob> {
