@@ -231,21 +231,29 @@ export function setAccessToken(token: string): void {
   }
 }
 
-export function requestHeaders(accept: string, initial?: HeadersInit): Headers {
+export function requestHeaders(
+  accept: string,
+  initial?: HeadersInit,
+  includeCsrfToken = false,
+): Headers {
   const headers = new Headers(initial);
   headers.set("Accept", accept);
   const token = getAccessToken();
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
+    if (includeCsrfToken) {
+      headers.set("X-CSRF-Token", token);
+    }
   }
   return headers;
 }
 
 async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method ?? "GET").toUpperCase();
   const response = await fetch(`${API_ROOT}${path}`, {
     ...options,
     cache: "no-store",
-    headers: requestHeaders("application/json", options.headers),
+    headers: requestHeaders("application/json", options.headers, method === "POST"),
   });
   if (!response.ok) {
     throw await makeApiError(response);
