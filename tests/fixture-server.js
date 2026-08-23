@@ -98,26 +98,65 @@ const makeCameraFocusStatus = () => ({
   auto_enabled: false,
 });
 
+/** @param {DeviceRuntime["network"]} network */
+function networkDevices(network) {
+  return [
+    { interface: network.ap.interface ?? "wlan0", type: "wifi-ap", state: network.ap.state },
+    {
+      interface: network.wifi_client.interface ?? "wlan0",
+      type: "wifi-client",
+      state: network.wifi_client.state,
+    },
+    { interface: network.wired.interface ?? "eth0", type: "ethernet", state: network.wired.state },
+  ];
+}
+
+/** @param {DeviceRuntime} runtime @returns {NetworkStatus} */
+function makeNetworkStatusFromRuntime(runtime) {
+  return {
+    schema: "ylx.network-status.v1",
+    observed_at: runtime.observed_at,
+    desired: {
+      mode: "hotspot",
+      wifi_client: null,
+      ethernet: null,
+    },
+    observed: {
+      ap: structuredClone(runtime.network.ap),
+      wifi_client: structuredClone(runtime.network.wifi_client),
+      wired: structuredClone(runtime.network.wired),
+      default_route: runtime.network.default_route,
+      mdns: {
+        hostname: "rp-ylx.local",
+        service: "_ylx-capture._tcp",
+        aliases: ["_http._tcp"],
+        port: 8080,
+      },
+      devices: networkDevices(runtime.network),
+    },
+    transaction: {
+      current: null,
+      latest: null,
+    },
+    mutation_capability: {
+      enabled: false,
+      operations: ["apply", "retry", "forget"],
+      idempotency_key_required: true,
+      secret_handling: "opaque_credential_reference_only",
+      active_state_policy: "idle_only",
+    },
+    concurrency_capability: {
+      rescue_ap_required: true,
+      same_phy_ap_sta: "unverified",
+      exclusive_client_failure_timeout_seconds: 10,
+      max_managed_interfaces: 1,
+      max_ap_interfaces: 1,
+    },
+  };
+}
+
 /** @returns {NetworkStatus} */
-const makeNetworkStatus = () => ({
-  format: "ylx.network-status.v0",
-  capabilities: {
-    modes: ["hotspot", "wifi-client", "ethernet-dhcp", "ethernet-static"],
-    wifi_interface: "wlan0",
-    ethernet_interface: "eth0",
-    second_wifi: false,
-  },
-  mdns: {
-    hostname: "rp-ylx.local",
-    service: "_ylx-capture._tcp",
-    aliases: ["_http._tcp"],
-    port: 8080,
-  },
-  devices: [
-    { interface: "wlan0", type: "wifi", state: "connected" },
-    { interface: "eth0", type: "ethernet", state: "disconnected" },
-  ],
-});
+const makeNetworkStatus = () => makeNetworkStatusFromRuntime(makeRuntime());
 
 /** @returns {DeviceRuntime} */
 const makeRuntime = () => ({
@@ -288,12 +327,18 @@ function makeFixture() {
 let fixture = makeFixture();
 /** @type {Set<ServerResponse>} */
 let eventResponses = new Set();
+/** @type {Set<ServerResponse>} */
+let networkEventResponses = new Set();
 
 function resetFixture() {
   for (const response of eventResponses) {
     response.end();
   }
   eventResponses = new Set();
+  for (const response of networkEventResponses) {
+    response.end();
+  }
+  networkEventResponses = new Set();
   fixture = makeFixture();
 }
 
@@ -325,8 +370,28 @@ function captureEvent(type, data, subjectSessionId = null) {
   };
 }
 
+/** @param {string} [type] */
+function networkEvent(type = "snapshot") {
+  const deliveryId = String(fixture.nextDeliveryId++);
+  return {
+    schema: "ylx.network-event.v1",
+    sse_delivery_id: deliveryId,
+    occurred_at: "2026-08-12T02:25:01Z",
+    type,
+    transaction_id: null,
+    data: fixture.networkStatus,
+  };
+}
+
 /** @param {ServerResponse} response @param {ReturnType<typeof captureEvent>} event */
 function writeEvent(response, event) {
+  response.write(`id: ${event.sse_delivery_id}\n`);
+  response.write(`event: ${event.type}\n`);
+  response.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+/** @param {ServerResponse} response @param {ReturnType<typeof networkEvent>} event */
+function writeNetworkEvent(response, event) {
   response.write(`id: ${event.sse_delivery_id}\n`);
   response.write(`event: ${event.type}\n`);
   response.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -343,6 +408,13 @@ function broadcastSnapshot() {
   );
   for (const response of eventResponses) {
     writeEvent(response, event);
+  }
+}
+
+function broadcastNetworkSnapshot() {
+  const event = networkEvent("snapshot");
+  for (const response of networkEventResponses) {
+    writeNetworkEvent(response, event);
   }
 }
 
@@ -470,101 +542,28 @@ function setNetworkRuntime(network, connectionMethod) {
       network: structuredClone(network),
     },
   };
+  fixture.networkStatus = makeNetworkStatusFromRuntime(fixture.device.runtime);
 }
 
-/** @param {{mode?: unknown, ssid?: unknown}} body */
-function applyNetwork(body) {
-  const mode = String(body.mode ?? "");
-  const current = fixture.device.runtime.network;
-  if (mode === "wifi-client") {
-    setNetworkRuntime(
-      {
-        ...current,
-        ap: {
-          state: "disabled",
-          interface: "wlan0",
-          addresses: [],
-          peer_or_ssid: null,
-        },
-        wifi_client: {
-          state: "connected",
-          interface: "wlan0",
-          addresses: ["192.168.50.24/24"],
-          peer_or_ssid: String(body.ssid ?? ""),
-        },
-        wired: {
-          state: "disconnected",
-          interface: "eth0",
-          addresses: [],
-          peer_or_ssid: null,
-        },
-        default_route: "wifi_client",
-      },
-      "wifi_client",
-    );
-    fixture.networkStatus.devices = [
-      { interface: "wlan0", type: "wifi", state: "connected" },
-      { interface: "eth0", type: "ethernet", state: "disconnected" },
-    ];
-  } else if (mode === "hotspot") {
-    setNetworkRuntime(
-      {
-        ...current,
-        ap: {
-          state: "active",
-          interface: "wlan0",
-          addresses: ["10.42.0.1/24"],
-          peer_or_ssid: String(body.ssid ?? "YLX-A1B2C3D4"),
-        },
-        wifi_client: {
-          state: "disabled",
-          interface: null,
-          addresses: [],
-          peer_or_ssid: null,
-        },
-        default_route: "none",
-      },
-      "wifi_ap",
-    );
-    fixture.networkStatus.devices = [
-      { interface: "wlan0", type: "wifi", state: "connected" },
-      { interface: "eth0", type: "ethernet", state: "disconnected" },
-    ];
-  } else if (mode === "ethernet-dhcp" || mode === "ethernet-static") {
-    setNetworkRuntime(
-      {
-        ...current,
-        wired: {
-          state: "connected",
-          interface: "eth0",
-          addresses: [mode === "ethernet-static" ? "192.168.10.24/24" : "192.168.50.25/24"],
-          peer_or_ssid: null,
-        },
-        default_route: "wired",
-      },
-      "ethernet_lan",
-    );
-    fixture.networkStatus.devices = [
-      { interface: "wlan0", type: "wifi", state: "disconnected" },
-      { interface: "eth0", type: "ethernet", state: "connected" },
-    ];
-  }
-  return {
-    format: "ylx.network-result.v0",
-    ok: true,
-    request_id: `fixture:${String(fixture.apiRequests.at(-1)?.idempotencyKey ?? "")}`,
-    mode,
-    replayed: false,
-  };
-}
-
-/** @param {IncomingMessage} request @returns {Promise<unknown>} */
-async function readJson(request) {
+/** @param {IncomingMessage} request @returns {Promise<unknown | null>} */
+async function readOptionalJson(request) {
   const chunks = [];
   for await (const chunk of request) {
     chunks.push(chunk);
   }
+  if (chunks.length === 0) {
+    return null;
+  }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+/** @param {IncomingMessage} request @returns {Promise<unknown>} */
+async function readJson(request) {
+  const body = await readOptionalJson(request);
+  if (body === null) {
+    throw new Error("missing JSON body");
+  }
+  return body;
 }
 
 const SECRET_BODY_KEYS = new Set(["psk", "password", "secret", "token"]);
@@ -583,6 +582,31 @@ function redactSecrets(value) {
       SECRET_BODY_KEYS.has(key.toLowerCase()) ? "<redacted>" : redactSecrets(entry),
     ]),
   );
+}
+
+/**
+ * @param {IncomingMessage} request
+ * @param {ServerResponse} response
+ * @param {{body?: unknown} | null} apiRequest
+ */
+async function failClosedNetworkMutation(request, response, apiRequest) {
+  const body = await readOptionalJson(request);
+  if (apiRequest) {
+    apiRequest.body = redactSecrets(body);
+  }
+  sendJson(response, 503, {
+    schema: "ylx.api-error.v2",
+    error: {
+      code: "network_mutation_unavailable",
+      message: "网络变更控制器未启用；Echo fixture 保持 fail-closed",
+      request_id: "6f214fbd-88c0-4820-a956-2044b1b0488f",
+      retryable: false,
+      details: {
+        mutation_enabled: false,
+        accepted_operations: ["apply", "retry", "forget"],
+      },
+    },
+  });
 }
 
 /** @param {string} displayName */
@@ -1034,6 +1058,50 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/__fixture/network-snapshot" && request.method === "POST") {
+    const body = /** @type {{defaultRoute?: string, wifiState?: string, wifiSsid?: string, wifiAddress?: string, wiredState?: string, wiredAddress?: string}} */ (
+      await readJson(request)
+    );
+    const current = fixture.device.runtime.network;
+    const defaultRoute =
+      body.defaultRoute === "wifi_client" || body.defaultRoute === "wired" || body.defaultRoute === "none"
+        ? body.defaultRoute
+        : current.default_route;
+    const nextNetwork = {
+      ...current,
+      wifi_client: {
+        ...current.wifi_client,
+        state: typeof body.wifiState === "string" ? body.wifiState : current.wifi_client.state,
+        interface:
+          typeof body.wifiState === "string" && body.wifiState !== "disabled"
+            ? "wlan0"
+            : current.wifi_client.interface,
+        addresses:
+          typeof body.wifiAddress === "string" ? [body.wifiAddress] : current.wifi_client.addresses,
+        peer_or_ssid:
+          typeof body.wifiSsid === "string" ? body.wifiSsid : current.wifi_client.peer_or_ssid,
+      },
+      wired: {
+        ...current.wired,
+        state: typeof body.wiredState === "string" ? body.wiredState : current.wired.state,
+        addresses:
+          typeof body.wiredAddress === "string" ? [body.wiredAddress] : current.wired.addresses,
+      },
+      default_route: defaultRoute,
+    };
+    setNetworkRuntime(
+      nextNetwork,
+      defaultRoute === "wifi_client"
+        ? "wifi_client"
+        : defaultRoute === "wired"
+          ? "ethernet_lan"
+          : "wifi_ap",
+    );
+    broadcastNetworkSnapshot();
+    response.writeHead(204).end();
+    return;
+  }
+
   if (url.pathname === "/__fixture/safe-swap" && request.method === "POST") {
     completeSafeSwap();
     response.writeHead(204).end();
@@ -1219,6 +1287,32 @@ const server = createServer(async (request, response) => {
     }
   }
 
+  if (url.pathname === "/api/v4/network/events" && request.method === "GET") {
+    if (fixture.networkUnavailable) {
+      sendJson(response, 404, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "network_unavailable",
+          message: "当前设备未开放网络配置接口",
+          request_id: "c8f29e94-3ba4-4d91-a2ac-df67aa9b4a77",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    response.writeHead(200, {
+      "Cache-Control": "no-cache",
+      "Content-Type": "text/event-stream; charset=utf-8",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    response.flushHeaders();
+    networkEventResponses.add(response);
+    writeNetworkEvent(response, networkEvent("snapshot"));
+    request.on("close", () => networkEventResponses.delete(response));
+    return;
+  }
+
   if (url.pathname === "/api/v4/network") {
     if (fixture.networkUnavailable) {
       sendJson(response, 404, {
@@ -1236,41 +1330,18 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, fixture.networkStatus);
       return;
     }
-    if (request.method === "POST") {
-      const body = /** @type {{schema?: string, mode?: unknown, ssid?: unknown, psk?: unknown, address?: unknown, gateway?: unknown, dns?: unknown}} */ (
-        await readJson(request)
-      );
-      if (apiRequest) {
-        apiRequest.body = redactSecrets(body);
-      }
-      const mode = body.mode;
-      const validWifi =
-        (mode === "wifi-client" || mode === "hotspot") &&
-        typeof body.ssid === "string" &&
-        typeof body.psk === "string";
-      const validEthernetDhcp = mode === "ethernet-dhcp";
-      const validEthernetStatic = mode === "ethernet-static" && typeof body.address === "string";
-      if (
-        !request.headers["idempotency-key"] ||
-        body.schema !== "ylx.network-apply.v1" ||
-        !(validWifi || validEthernetDhcp || validEthernetStatic)
-      ) {
-        sendJson(response, 400, {
-          schema: "ylx.api-error.v2",
-          error: {
-            code: "invalid_network",
-            message: "网络请求不符合 v4 契约",
-            request_id: "cbb4cc53-36c7-4cae-9cf7-029aa2b75ed2",
-            retryable: false,
-          },
-        });
-        return;
-      }
-      const result = applyNetwork(body);
-      sendJson(response, 200, result);
-      broadcastSnapshot();
-      return;
-    }
+    await failClosedNetworkMutation(request, response, apiRequest);
+    return;
+  }
+
+  if (
+    request.method !== "GET" &&
+    ["/api/v4/network/apply", "/api/v4/network/retry", "/api/v4/network/forget"].includes(
+      url.pathname,
+    )
+  ) {
+    await failClosedNetworkMutation(request, response, apiRequest);
+    return;
   }
 
   if (url.pathname === "/api/v4/preview") {

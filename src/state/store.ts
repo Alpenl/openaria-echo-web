@@ -3,6 +3,7 @@ import type {
   CaptureEvent,
   CaptureStateEventPayload,
   CaptureStatus,
+  NetworkEvent,
   SafeSwapReceipt,
   SessionList,
 } from "../api/types";
@@ -510,6 +511,14 @@ export class EchoStore {
         });
     }
     await this.networkRefresh;
+  };
+
+  acceptNetworkEvent = async (event: NetworkEvent): Promise<void> => {
+    if (event.type === "snapshot" && event.data.schema === "ylx.network-status.v1") {
+      this.dispatch({ type: "network.loaded", payload: event.data });
+      return;
+    }
+    await this.refreshNetwork();
   };
 
   setCameraFocus = async (request: { value?: number; auto_enabled?: boolean }): Promise<void> => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { followCaptureEvents } from "./api/events";
+import { followCaptureEvents, followNetworkEvents } from "./api/events";
 import { followLatestPreview, type PreviewState } from "./api/preview";
 import { visibleError } from "./state/store";
 import { store } from "./state/store";
@@ -29,6 +29,7 @@ export function App() {
   const [previewState, setPreviewState] = useState<PreviewState>("waiting");
   const started = useRef(false);
   const eventController = useRef<AbortController | null>(null);
+  const networkEventController = useRef<AbortController | null>(null);
   const previewController = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -83,6 +84,16 @@ export function App() {
     });
 
     function startLiveConnections() {
+      const handleUnauthorized = (error: Parameters<typeof visibleError>[0]) => {
+        eventController.current?.abort();
+        eventController.current = null;
+        networkEventController.current?.abort();
+        networkEventController.current = null;
+        previewController.current?.abort();
+        previewController.current = null;
+        store.dispatch({ type: "credentials.required" });
+        store.dispatch({ type: "connection.failed", error: visibleError(error) });
+      };
       if (!eventController.current) {
         const controller = new AbortController();
         eventController.current = controller;
@@ -91,12 +102,17 @@ export function App() {
           onEvent: store.acceptCaptureEvent,
           onConnection: (connection) => store.dispatch({ type: "connection.changed", connection }),
           onUnauthorized: (error) => {
-            eventController.current = null;
-            previewController.current?.abort();
-            previewController.current = null;
-            store.dispatch({ type: "credentials.required" });
-            store.dispatch({ type: "connection.failed", error: visibleError(error) });
+            handleUnauthorized(error);
           },
+        });
+      }
+      if (!networkEventController.current) {
+        const controller = new AbortController();
+        networkEventController.current = controller;
+        void followNetworkEvents({
+          signal: controller.signal,
+          onEvent: store.acceptNetworkEvent,
+          onUnauthorized: handleUnauthorized,
         });
       }
       if (!previewController.current && store.getState().device?.capabilities.preview) {
@@ -112,6 +128,7 @@ export function App() {
 
     const stop = () => {
       eventController.current?.abort();
+      networkEventController.current?.abort();
       previewController.current?.abort();
     };
     window.addEventListener("pagehide", stop, { once: true });
