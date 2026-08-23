@@ -908,6 +908,31 @@ test("customer 事件流携带令牌并在断线后从权威快照收敛", async
   );
 });
 
+test("customer 写请求携带 bearer、同值 CSRF 与浏览器 Origin", async ({ page, request }) => {
+  /** @type {import("@playwright/test").Request[]} */
+  const writeRequests = [];
+  page.on("request", (browserRequest) => {
+    if (new URL(browserRequest.url()).pathname === "/api/v4/capture/start") {
+      writeRequests.push(browserRequest);
+    }
+  });
+  await request.post("/__fixture/config", { data: { requireBearer: true } });
+  await page.addInitScript(() => {
+    sessionStorage.setItem("rp-ylx-access-token", "customer-token");
+  });
+
+  await page.goto("/");
+  await page.getByLabel("录制名称").fill("customer csrf");
+  await page.getByRole("button", { name: "开始录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+
+  expect(writeRequests).toHaveLength(1);
+  const headers = await writeRequests[0].allHeaders();
+  expect(headers.authorization).toBe("Bearer customer-token");
+  expect(headers["x-csrf-token"]).toBe("customer-token");
+  expect(headers.origin).toBe(new URL(page.url()).origin);
+});
+
 test("事件流持续断线时禁用写操作且限制重连频率", async ({ page, request }) => {
   await page.goto("/");
   await expect(page.locator(".connection")).toHaveText("已连接");
