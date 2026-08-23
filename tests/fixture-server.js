@@ -10,6 +10,7 @@ import { createServer } from "node:http";
 /** @typedef {import("../src/api/types.ts").DeviceDescriptor} DeviceDescriptor */
 /** @typedef {import("../src/api/types.ts").DeviceRuntime} DeviceRuntime */
 /** @typedef {import("../src/api/types.ts").NetworkStatus} NetworkStatus */
+/** @typedef {import("../src/api/types.ts").NetworkTransaction} NetworkTransaction */
 /** @typedef {import("../src/api/types.ts").SafeSwapReceipt} SafeSwapReceipt */
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,6 +110,37 @@ function networkDevices(network) {
     },
     { interface: network.wired.interface ?? "eth0", type: "ethernet", state: network.wired.state },
   ];
+}
+
+/** @param {Partial<NetworkTransaction>} [overrides] @returns {NetworkTransaction} */
+function makeNetworkTransaction(overrides = {}) {
+  return {
+    schema: "ylx.network-transaction.v1",
+    transaction_id: "0198d2a0-41a0-7b7a-a751-0e86a39d4db1",
+    operation: "apply",
+    status: "rescued",
+    stage: "falling_back",
+    desired: {
+      mode: "wifi-client",
+      wifi_client: {
+        ssid: "Lab WiFi",
+        credential_state: "stored",
+      },
+      ethernet: null,
+    },
+    accepted_at: "2026-08-12T02:25:02Z",
+    updated_at: "2026-08-12T02:25:12Z",
+    rescue: {
+      ap_validated: true,
+      fallback_mode: "hotspot",
+      failure_trigger_seconds: 10,
+    },
+    error: {
+      code: "activation_failed",
+      message: "candidate Wi-Fi failed before commit",
+    },
+    ...overrides,
+  };
 }
 
 /** @param {DeviceRuntime} runtime @returns {NetworkStatus} */
@@ -370,16 +402,18 @@ function captureEvent(type, data, subjectSessionId = null) {
   };
 }
 
-/** @param {string} [type] */
-function networkEvent(type = "snapshot") {
+/** @param {string} [type] @param {NetworkStatus | NetworkTransaction | null} [data] */
+function networkEvent(type = "snapshot", data = null) {
+  const eventData = data ?? fixture.networkStatus;
   const deliveryId = String(fixture.nextDeliveryId++);
   return {
     schema: "ylx.network-event.v1",
     sse_delivery_id: deliveryId,
     occurred_at: "2026-08-12T02:25:01Z",
     type,
-    transaction_id: null,
-    data: fixture.networkStatus,
+    transaction_id:
+      eventData.schema === "ylx.network-transaction.v1" ? eventData.transaction_id : null,
+    data: eventData,
   };
 }
 
@@ -413,6 +447,14 @@ function broadcastSnapshot() {
 
 function broadcastNetworkSnapshot() {
   const event = networkEvent("snapshot");
+  for (const response of networkEventResponses) {
+    writeNetworkEvent(response, event);
+  }
+}
+
+/** @param {NetworkTransaction} transaction */
+function broadcastNetworkTransaction(transaction) {
+  const event = networkEvent("transaction", transaction);
   for (const response of networkEventResponses) {
     writeNetworkEvent(response, event);
   }
@@ -1098,6 +1140,27 @@ const server = createServer(async (request, response) => {
           : "wifi_ap",
     );
     broadcastNetworkSnapshot();
+    response.writeHead(204).end();
+    return;
+  }
+
+  if (url.pathname === "/__fixture/network-transaction-event" && request.method === "POST") {
+    const body = /** @type {{status?: string, stage?: string, operation?: string}} */ (
+      await readJson(request)
+    );
+    const transaction = makeNetworkTransaction({
+      status: body.status ?? "rescued",
+      stage: body.stage ?? "falling_back",
+      operation: body.operation ?? "apply",
+    });
+    fixture.networkStatus = {
+      ...fixture.networkStatus,
+      transaction: {
+        current: null,
+        latest: transaction,
+      },
+    };
+    broadcastNetworkTransaction(transaction);
     response.writeHead(204).end();
     return;
   }

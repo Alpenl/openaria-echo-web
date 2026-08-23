@@ -292,12 +292,19 @@ export interface NetworkDesiredState {
 }
 
 export interface NetworkTransaction {
+  schema: "ylx.network-transaction.v1";
   transaction_id: string;
-  operation: string;
-  state: string;
-  requested_at?: string;
-  started_at?: string | null;
-  completed_at?: string | null;
+  operation: "apply" | "retry" | "forget" | string;
+  status: string;
+  stage: string;
+  desired: NetworkDesiredState;
+  accepted_at: string;
+  updated_at: string;
+  rescue: {
+    ap_validated: boolean;
+    fallback_mode: NetworkMode;
+    failure_trigger_seconds: number;
+  };
   error?: { code?: string; message?: string; [key: string]: unknown } | null;
   [key: string]: unknown;
 }
@@ -340,7 +347,7 @@ export interface NetworkEvent {
   sse_delivery_id: string;
   occurred_at: string;
   transaction_id: string | null;
-  data: NetworkStatus;
+  data: NetworkStatus | NetworkTransaction;
 }
 
 export type CaptureStateEventState =
