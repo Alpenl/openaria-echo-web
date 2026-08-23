@@ -3,7 +3,10 @@ import type {
   CaptureEvent,
   CaptureStateEventPayload,
   CaptureStatus,
+  NetworkApplyDesiredState,
   NetworkEvent,
+  NetworkTransactionReceipt,
+  NetworkWifiSecurity,
   SafeSwapReceipt,
   SessionList,
 } from "../api/types";
@@ -514,11 +517,135 @@ export class EchoStore {
   };
 
   acceptNetworkEvent = async (event: NetworkEvent): Promise<void> => {
+    const current = this.state.networkStatus;
+    if (
+      current &&
+      event.authority_epoch === current.authority_epoch &&
+      event.source_revision <= current.source_revision
+    ) {
+      return;
+    }
     if (event.type === "snapshot" && event.data.schema === "ylx.network-status.v1") {
       this.dispatch({ type: "network.loaded", payload: event.data });
       return;
     }
     await this.refreshNetwork();
+  };
+
+  scanNetworks = async (): Promise<void> => {
+    if (this.state.networkScanPending) {
+      return;
+    }
+    this.dispatch({ type: "network.scan.pending" });
+    try {
+      const scan = await deviceApi.scanNetworks();
+      this.dispatch({ type: "network.scan.loaded", payload: scan });
+    } catch (error) {
+      this.dispatch({ type: "network.scan.failed", error: visibleError(error) });
+    }
+  };
+
+  private networkMutationBlocked(): boolean {
+    return (
+      this.state.networkCommand.phase === "submitting" ||
+      this.state.networkCommand.phase === "accepted" ||
+      this.state.networkStatus?.transaction.current !== null ||
+      this.state.networkStatus?.mutation_capability.enabled !== true
+    );
+  }
+
+  private acceptNetworkReceipt(
+    operation: "apply" | "retry" | "forget",
+    receipt: NetworkTransactionReceipt,
+  ): void {
+    this.dispatch({ type: "network.command.accepted", operation, payload: receipt });
+    void this.refreshNetwork();
+  }
+
+  private rejectNetworkCommand(
+    operation: "apply" | "retry" | "forget",
+    error: unknown,
+    outcomeMayBeUnknown: boolean,
+  ): void {
+    if (outcomeMayBeUnknown && !(error instanceof DeviceApiError)) {
+      this.dispatch({
+        type: "network.command.indeterminate",
+        operation,
+        error: {
+          code: "network_outcome_indeterminate",
+          message: "连接在事务回执前中断；重新连接后将从设备权威状态对账",
+        },
+      });
+      return;
+    }
+    this.dispatch({ type: "network.command.failed", operation, error: visibleError(error) });
+  }
+
+  applyWifiNetwork = async (request: {
+    ssid: string;
+    security: NetworkWifiSecurity;
+    passphrase?: string;
+  }): Promise<void> => {
+    if (this.networkMutationBlocked()) {
+      return;
+    }
+    this.dispatch({ type: "network.command.pending", operation: "apply" });
+    let mutationSubmitted = false;
+    try {
+      let credentialRef: string | undefined;
+      if (request.security !== "open") {
+        if (request.passphrase === undefined) {
+          throw new DeviceApiError(
+            "受保护的 Wi-Fi 需要密码",
+            400,
+            "invalid_network_desired_state",
+          );
+        }
+        const credential = await deviceApi.createNetworkCredential(request.passphrase);
+        credentialRef = credential.credential_ref;
+      }
+      const wifiClient = {
+        ssid: request.ssid,
+        security: request.security,
+        ...(credentialRef === undefined ? {} : { credential_ref: credentialRef }),
+      };
+      const desired: NetworkApplyDesiredState = {
+        mode: "wifi-client",
+        wifi_client: wifiClient,
+        ethernet: null,
+      };
+      mutationSubmitted = true;
+      const receipt = await deviceApi.applyNetwork(desired);
+      this.acceptNetworkReceipt("apply", receipt);
+    } catch (error) {
+      this.rejectNetworkCommand("apply", error, mutationSubmitted);
+    }
+  };
+
+  retryNetwork = async (transactionId: string): Promise<void> => {
+    if (this.networkMutationBlocked()) {
+      return;
+    }
+    this.dispatch({ type: "network.command.pending", operation: "retry" });
+    try {
+      const receipt = await deviceApi.retryNetwork(transactionId);
+      this.acceptNetworkReceipt("retry", receipt);
+    } catch (error) {
+      this.rejectNetworkCommand("retry", error, true);
+    }
+  };
+
+  forgetNetwork = async (): Promise<void> => {
+    if (this.networkMutationBlocked()) {
+      return;
+    }
+    this.dispatch({ type: "network.command.pending", operation: "forget" });
+    try {
+      const receipt = await deviceApi.forgetNetwork();
+      this.acceptNetworkReceipt("forget", receipt);
+    } catch (error) {
+      this.rejectNetworkCommand("forget", error, true);
+    }
   };
 
   setCameraFocus = async (request: { value?: number; auto_enabled?: boolean }): Promise<void> => {

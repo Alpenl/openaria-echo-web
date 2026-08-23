@@ -18,7 +18,16 @@ export interface RawVector3 {
 }
 
 export interface NetworkInterfaceStatus {
-  state: string;
+  state:
+    | "disabled"
+    | "disconnected"
+    | "starting"
+    | "connecting"
+    | "connected"
+    | "active"
+    | "degraded"
+    | "failed"
+    | "unavailable";
   interface: string | null;
   addresses: string[];
   peer_or_ssid: string | null;
@@ -280,45 +289,100 @@ export interface UnsuccessfulOutcome {
 }
 
 export type NetworkMode = "hotspot" | "wifi-client" | "ethernet-dhcp" | "ethernet-static";
+export type NetworkWifiSecurity =
+  | "open"
+  | "wpa2-personal"
+  | "wpa3-personal"
+  | "wpa2-wpa3-personal";
+
+export interface NetworkStaticIpv4 {
+  address: string;
+  prefix_length: number;
+  gateway: string | null;
+  dns: string[];
+}
+
+export interface NetworkDesiredEthernet {
+  addressing: "dhcp" | "static";
+  static_ipv4: NetworkStaticIpv4 | null;
+}
 
 export interface NetworkDesiredState {
   mode: NetworkMode;
   wifi_client: {
-    ssid?: string;
-    credential_state?: string;
-    credential_ref?: string;
+    ssid: string;
+    security: NetworkWifiSecurity;
+    credential_state: "absent" | "pending_input" | "stored";
   } | null;
-  ethernet: Record<string, unknown> | null;
+  ethernet: NetworkDesiredEthernet | null;
 }
 
 export interface NetworkTransaction {
   schema: "ylx.network-transaction.v1";
+  authority_epoch: string;
+  source_revision: number;
   transaction_id: string;
-  operation: "apply" | "retry" | "forget" | string;
-  status: string;
-  stage: string;
+  operation: "apply" | "retry" | "forget";
+  status: "accepted" | "running" | "committed" | "rescued" | "failed";
+  stage:
+    | "accepted"
+    | "prepared"
+    | "ap_ready"
+    | "activating"
+    | "verifying"
+    | "committed"
+    | "falling_back"
+    | "rescued"
+    | "failed"
+    | "forgetting"
+    | "forgotten";
   desired: NetworkDesiredState;
   accepted_at: string;
   updated_at: string;
+  deadline: {
+    time_base: "device_monotonic";
+    deadline_ns: number;
+    remaining_seconds: number;
+  } | null;
+  recovery_action:
+    | "await_device"
+    | "reconnect_target_lan"
+    | "reconnect_rescue_ap"
+    | "retry"
+    | "service_required"
+    | "none";
   rescue: {
     ap_validated: boolean;
-    fallback_mode: NetworkMode;
-    failure_trigger_seconds: number;
+    fallback_mode: "hotspot";
+    failure_trigger_seconds: 10;
   };
-  error?: { code?: string; message?: string; [key: string]: unknown } | null;
-  [key: string]: unknown;
+  error: {
+    code:
+      | "rescue_ap_unavailable"
+      | "credential_rejected"
+      | "dhcp_timeout"
+      | "route_lost"
+      | "network_manager_unavailable"
+      | "concurrency_unsupported";
+    message: string;
+    retryable: boolean;
+  } | null;
 }
 
 export interface NetworkStatus {
   schema: "ylx.network-status.v1";
+  authority_epoch: string;
+  source_revision: number;
   observed_at: string;
+  saved: boolean;
+  verified: boolean;
   desired: NetworkDesiredState;
   observed: {
     ap: NetworkInterfaceStatus;
     wifi_client: NetworkInterfaceStatus;
     wired: NetworkInterfaceStatus;
-    default_route: string;
-    mdns: { hostname: string; service: string; aliases: string[]; port: number } | null;
+    default_route: "wifi_client" | "wired" | "none";
+    mdns: { hostname: string; service: string; aliases: string[]; port: number };
     devices: Array<{ interface: string; type: string; state: string }>;
   };
   transaction: {
@@ -327,24 +391,78 @@ export interface NetworkStatus {
   };
   mutation_capability: {
     enabled: boolean;
-    operations: string[];
-    idempotency_key_required: boolean;
-    secret_handling: string;
-    active_state_policy: string;
+    disabled_reason:
+      | "not_enabled"
+      | "auth_profile_unavailable"
+      | "controller_unavailable"
+      | "network_manager_unavailable"
+      | "rescue_ap_not_validated"
+      | "capture_active"
+      | "recovery_required"
+      | "maintenance_window_closed"
+      | "unsupported_concurrency"
+      | null;
+    operations: ["apply", "retry", "forget"];
+    idempotency_key_required: true;
+    secret_handling: "opaque_credential_reference_only";
+    active_state_policy: "idle_only";
   };
   concurrency_capability: {
-    rescue_ap_required: boolean;
-    same_phy_ap_sta: "unverified" | "driver_advertised" | "unsupported" | string;
-    exclusive_client_failure_timeout_seconds: number;
+    rescue_ap_required: true;
+    same_phy_ap_sta: "supported" | "unsupported" | "unverified";
+    exclusive_client_failure_timeout_seconds: 10;
     max_managed_interfaces: number;
     max_ap_interfaces: number;
   };
 }
 
+export interface NetworkScanEntry {
+  ssid: string | null;
+  hidden: boolean;
+  security: NetworkWifiSecurity;
+  signal_dbm: number;
+  credential_required: boolean;
+}
+
+export interface NetworkScanResult {
+  schema: "ylx.network-scan.v1";
+  authority_epoch: string;
+  source_revision: number;
+  scanned_at: string;
+  networks: NetworkScanEntry[];
+}
+
+export interface NetworkCredentialReceipt {
+  schema: "ylx.network-credential-receipt.v1";
+  credential_ref: string;
+  issued_at: string;
+  expires_at: string;
+  ttl_seconds: number;
+  single_use: true;
+}
+
+export interface NetworkApplyDesiredState {
+  mode: NetworkMode;
+  wifi_client: {
+    ssid: string;
+    security: NetworkWifiSecurity;
+    credential_ref?: string;
+  } | null;
+  ethernet: NetworkDesiredEthernet | null;
+}
+
+export interface NetworkTransactionReceipt {
+  schema: "ylx.network-transaction-receipt.v1";
+  accepted_at: string;
+  transaction: NetworkTransaction;
+}
+
 export interface NetworkEvent {
   schema: "ylx.network-event.v1";
-  type: "snapshot" | string;
+  type: "snapshot" | "transaction";
   sse_delivery_id: string;
+  authority_epoch: string;
+  source_revision: number;
   occurred_at: string;
   transaction_id: string | null;
   data: NetworkStatus | NetworkTransaction;

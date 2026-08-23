@@ -4,7 +4,9 @@ import type {
   DeviceDescriptor,
   DeviceRuntime,
   Diagnostic,
+  NetworkScanResult,
   NetworkStatus,
+  NetworkTransactionReceipt,
   SafeSwapState,
   SessionDetail,
   SessionList,
@@ -15,6 +17,8 @@ export type ConnectionState = "connecting" | "connected" | "disconnected";
 export type InspectMode = "both" | "left" | "right";
 export type PanelId = "none" | "sessions" | "device";
 export type SessionFilter = "all" | "usable" | "unsuccessful";
+export type NetworkOperation = "apply" | "retry" | "forget";
+export type NetworkCommandPhase = "idle" | "submitting" | "accepted" | "indeterminate" | "failed";
 
 export interface FocusPeakingState {
   enabled: boolean;
@@ -50,6 +54,13 @@ export interface AppState {
   device: DeviceDescriptor | null;
   capture: CaptureStatus | null;
   networkStatus: NetworkStatus | null;
+  networkScan: NetworkScanResult | null;
+  networkScanPending: boolean;
+  networkCommand: {
+    operation: NetworkOperation | null;
+    phase: NetworkCommandPhase;
+    transactionId: string | null;
+  };
   safeSwapReceipt: SafeSwapState | null;
   sessions: SessionsState;
   selected: SelectedSession | null;
@@ -75,6 +86,17 @@ export type Action =
   | { type: "camera-focus.settled" }
   | { type: "camera-focus.updated"; payload: CameraFocusStatus }
   | { type: "network.loaded"; payload: NetworkStatus | null }
+  | { type: "network.scan.pending" }
+  | { type: "network.scan.loaded"; payload: NetworkScanResult }
+  | { type: "network.scan.failed"; error: VisibleError }
+  | { type: "network.command.pending"; operation: NetworkOperation }
+  | {
+      type: "network.command.accepted";
+      operation: NetworkOperation;
+      payload: NetworkTransactionReceipt;
+    }
+  | { type: "network.command.indeterminate"; operation: NetworkOperation; error: VisibleError }
+  | { type: "network.command.failed"; operation: NetworkOperation; error: VisibleError }
   | { type: "error.cleared" }
   | { type: "safe-swap.received"; payload: SafeSwapState }
   | { type: "safe-swap.cleared" }
@@ -105,6 +127,9 @@ export const initialState: AppState = {
   device: null,
   capture: null,
   networkStatus: null,
+  networkScan: null,
+  networkScanPending: false,
+  networkCommand: { operation: null, phase: "idle", transactionId: null },
   safeSwapReceipt: null,
   sessions: {
     items: [],
@@ -152,6 +177,14 @@ function receiptMatchesCapture(safeSwap: SafeSwapState | null, capture: CaptureS
 
 /** source revision 在同一 authority epoch 内严格递增，倒退的快照一律丢弃。 */
 function isStaleCaptureSnapshot(current: CaptureStatus | null, incoming: CaptureStatus): boolean {
+  return (
+    current !== null &&
+    incoming.authority_epoch === current.authority_epoch &&
+    incoming.source_revision < current.source_revision
+  );
+}
+
+function isStaleNetworkSnapshot(current: NetworkStatus | null, incoming: NetworkStatus): boolean {
   return (
     current !== null &&
     incoming.authority_epoch === current.authority_epoch &&
@@ -216,8 +249,77 @@ export function reduceState(state: AppState, action: Action): AppState {
             }
           : state.capture,
       };
-    case "network.loaded":
-      return { ...state, networkStatus: action.payload };
+    case "network.loaded": {
+      if (
+        action.payload !== null &&
+        isStaleNetworkSnapshot(state.networkStatus, action.payload)
+      ) {
+        return state;
+      }
+      const pendingId = state.networkCommand.transactionId;
+      const current = action.payload?.transaction.current ?? null;
+      const latest = action.payload?.transaction.latest ?? null;
+      const matching = [current, latest].find(
+        (transaction) => transaction?.transaction_id === pendingId,
+      );
+      const networkCommand = matching
+        ? {
+            ...state.networkCommand,
+            phase: matching.status === "committed" ||
+              matching.status === "rescued" ||
+              matching.status === "failed"
+              ? ("idle" as const)
+              : ("accepted" as const),
+          }
+        : state.networkCommand;
+      return { ...state, networkStatus: action.payload, networkCommand };
+    }
+    case "network.scan.pending":
+      return { ...state, networkScanPending: true, error: null };
+    case "network.scan.loaded":
+      return { ...state, networkScan: action.payload, networkScanPending: false, error: null };
+    case "network.scan.failed":
+      return { ...state, networkScanPending: false, error: action.error };
+    case "network.command.pending":
+      return {
+        ...state,
+        error: null,
+        networkCommand: {
+          operation: action.operation,
+          phase: "submitting",
+          transactionId: null,
+        },
+      };
+    case "network.command.accepted":
+      return {
+        ...state,
+        error: null,
+        networkCommand: {
+          operation: action.operation,
+          phase: "accepted",
+          transactionId: action.payload.transaction.transaction_id,
+        },
+      };
+    case "network.command.indeterminate":
+      return {
+        ...state,
+        error: action.error,
+        networkCommand: {
+          operation: action.operation,
+          phase: "indeterminate",
+          transactionId: null,
+        },
+      };
+    case "network.command.failed":
+      return {
+        ...state,
+        error: action.error,
+        networkCommand: {
+          operation: action.operation,
+          phase: "failed",
+          transactionId: null,
+        },
+      };
     case "error.cleared":
       return { ...state, error: null };
     case "safe-swap.received":

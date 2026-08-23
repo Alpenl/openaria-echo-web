@@ -1183,7 +1183,9 @@ a:hover {
 }
 
 .network-form input[type="text"],
-.network-form input[type="password"] {
+.network-form input[type="password"],
+.network-form select {
+  width: 100%;
   height: 40px;
   padding: 0 11px;
   background: var(--sunken);
@@ -1194,9 +1196,135 @@ a:hover {
   font-size: 13px;
 }
 
-.network-form input:disabled {
+.network-form input:disabled,
+.network-form select:disabled {
   color: var(--ink-3);
   border-color: var(--hairline);
+}
+
+.field-stack > span {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.network-provisioning {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.network-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.network-section-head h3 {
+  font-size: 14px;
+}
+
+.icon-button.compact {
+  width: 36px;
+  height: 36px;
+}
+
+.icon-button:disabled {
+  color: var(--ink-3);
+  border-color: var(--hairline);
+  cursor: not-allowed;
+}
+
+.panel-command,
+.panel-secondary,
+.panel-danger {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 2px;
+  font-size: 13px;
+}
+
+.panel-command {
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  color: #080a0b;
+  font-weight: 600;
+}
+
+.panel-secondary,
+.panel-danger {
+  background: transparent;
+  border: 1px solid var(--hairline-2);
+  color: var(--ink);
+}
+
+.panel-danger {
+  border-color: var(--fault);
+  color: var(--fault);
+}
+
+.panel-command:disabled,
+.panel-secondary:disabled,
+.panel-danger:disabled {
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.network-actions,
+.network-confirm-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.network-actions:empty {
+  display: none;
+}
+
+.network-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--caution);
+  background: var(--sunken);
+}
+
+.network-confirm.danger {
+  border-left-color: var(--fault);
+  background-image: var(--hatch);
+}
+
+.network-confirm strong {
+  overflow-wrap: anywhere;
+}
+
+.network-confirm p,
+.network-progress {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.network-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 10px;
+}
+
+.network-progress progress {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 5px;
+  accent-color: var(--live);
+}
+
+.network-progress span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .network-form input[type="range"] {

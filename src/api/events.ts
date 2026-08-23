@@ -6,6 +6,7 @@ import {
   waitForAbortableDelay,
 } from "./client";
 import type { CaptureEvent, NetworkEvent } from "./types";
+import { isNetworkEvent } from "./network";
 
 const CAPTURE_EVENT_URL = `${API_ROOT}/capture/events`;
 const NETWORK_EVENT_URL = `${API_ROOT}/network/events`;
@@ -24,6 +25,7 @@ function parseEvent<T extends SsePayloadIdentity>(
   block: string,
   expectedSchema: string,
   mismatchMessage: string,
+  validatePayload?: (value: unknown) => value is T,
 ): { id: string; payload: T } | null {
   let id: string | null = null;
   let event = "message";
@@ -52,7 +54,8 @@ function parseEvent<T extends SsePayloadIdentity>(
     !payload ||
     payload.schema !== expectedSchema ||
     payload.sse_delivery_id !== id ||
-    payload.type !== event
+    payload.type !== event ||
+    (validatePayload !== undefined && !validatePayload(payload))
   ) {
     throw new Error(mismatchMessage);
   }
@@ -77,6 +80,7 @@ interface FollowEventsOptions<T extends SsePayloadIdentity> {
   onEvent: (event: T) => Promise<void> | void;
   onConnection?: (state: "connected" | "disconnected") => void;
   onUnauthorized: (error: DeviceApiError) => void;
+  validatePayload?: (value: unknown) => value is T;
 }
 
 async function followEvents<T extends SsePayloadIdentity>(
@@ -115,7 +119,12 @@ async function followEvents<T extends SsePayloadIdentity>(
           const block = buffer.slice(0, boundary);
           const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0] ?? "\n\n";
           buffer = buffer.slice(boundary + separator.length);
-          const parsed = parseEvent<T>(block, expectedSchema, mismatchMessage);
+          const parsed = parseEvent<T>(
+            block,
+            expectedSchema,
+            mismatchMessage,
+            options.validatePayload,
+          );
           if (parsed) {
             await options.onEvent(parsed.payload);
             lastEventId = parsed.id;
@@ -160,6 +169,6 @@ export async function followNetworkEvents(options: FollowNetworkEventsOptions): 
     NETWORK_EVENT_URL,
     "ylx.network-event.v1",
     "网络事件与 SSE envelope 不一致",
-    options,
+    { ...options, validatePayload: isNetworkEvent },
   );
 }
