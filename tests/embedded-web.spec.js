@@ -476,6 +476,34 @@ test("v4 网络状态和事件只读且不暴露 Wi-Fi 密码表单", async ({ p
     })
     .toBe(true);
 
+  const beforeTransactionResponse = await request.get("/__fixture/requests");
+  const beforeTransactionBody = /** @type {{requests: FixtureRequestLog[]}} */ (
+    await beforeTransactionResponse.json()
+  );
+  const networkGetsBeforeTransaction = beforeTransactionBody.requests.filter(
+    (entry) => entry.path === "/api/v4/network" && !entry.idempotencyKey,
+  ).length;
+
+  await request.post("/__fixture/network-transaction-event", {
+    data: {
+      operation: "apply",
+      status: "rescued",
+      stage: "falling_back",
+    },
+  });
+  await expect(page.getByTestId("network-transaction")).toContainText(
+    "apply / rescued / falling_back",
+  );
+  await expect
+    .poll(async () => {
+      const response = await request.get("/__fixture/requests");
+      const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+      return body.requests.filter(
+        (entry) => entry.path === "/api/v4/network" && !entry.idempotencyKey,
+      ).length;
+    })
+    .toBeGreaterThan(networkGetsBeforeTransaction);
+
   const response = await request.get("/__fixture/requests");
   /** @type {{requests: FixtureRequestLog[]}} */
   const body = await response.json();

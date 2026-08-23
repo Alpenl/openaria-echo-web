@@ -34,7 +34,7 @@ function transactionText(state: AppState): string {
   if (!transaction) {
     return "无进行中事务";
   }
-  return `${transaction.operation} / ${transaction.state} / ${transaction.transaction_id}`;
+  return `${transaction.operation} / ${transaction.status} / ${transaction.stage} / ${transaction.transaction_id}`;
 }
 
 function mutationText(state: AppState): string {
