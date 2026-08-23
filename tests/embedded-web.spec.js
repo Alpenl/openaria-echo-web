@@ -267,7 +267,8 @@ test("设备未声明网络变更能力时仍读取只读网络状态和 mDNS", 
   await expect(page.locator(".connection")).toHaveText("已连接");
   await openPanel(page, "设备与链路");
   await expect(page.getByTestId("network-mdns")).toHaveText("rp-ylx.local:8080");
-  await expect(page.locator("#network-status")).toHaveText("网络状态只读；配置修改未开放");
+  await expect(page.locator("#network-status")).toContainText("网络状态只读");
+  await expect(page.locator("#network-status")).toContainText("配置修改未开放");
   await expect(page.getByRole("form", { name: "网络设置" })).toHaveCount(0);
   const response = await request.get("/__fixture/requests");
   const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
@@ -431,21 +432,17 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   expect(preview.maxInFlight).toBe(1);
 });
 
-test("网页可以提交 Wi-Fi 网络配置", async ({ page, request }) => {
+test("临时网络 v0 状态只读且不暴露 Wi-Fi 密码表单", async ({ page, request }) => {
   await page.goto("/");
   await openPanel(page, "设备与链路");
 
   await expect(page.getByTestId("network-wifi")).toContainText("未启用");
-  await page.getByLabel("SSID").fill("Lab WiFi");
-  await page.getByLabel("密码").fill("correct horse battery staple");
-  await page.getByRole("button", { name: "应用网络" }).click();
-  await expect(page.locator("#network-risk")).toContainText("默认路由 无默认路由");
-  await expect(page.locator("#network-risk")).toContainText("本页将断开");
-  await page.getByRole("button", { name: "确认应用网络" }).click();
-
-  await expect(page.getByTestId("network-wifi")).toContainText("Lab WiFi");
-  await expect(page.getByTestId("network-default-route")).toHaveText("Wi-Fi");
-  await expect(page.locator("#network-status")).toContainText("已应用 Wi-Fi");
+  await expect(page.getByTestId("network-modes")).toContainText("Wi-Fi");
+  await expect(page.locator("#network-status")).toContainText("网络状态只读");
+  await expect(page.locator("#network-status")).toContainText("配置修改未开放");
+  await expect(page.getByLabel("SSID")).toHaveCount(0);
+  await expect(page.getByLabel("密码")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /应用网络|确认应用网络/ })).toHaveCount(0);
 
   const response = await request.get("/__fixture/requests");
   /** @type {{requests: FixtureRequestLog[]}} */
@@ -453,12 +450,28 @@ test("网页可以提交 Wi-Fi 网络配置", async ({ page, request }) => {
   const networkRequests = body.requests.filter(
     (entry) => entry.path === "/api/v4/network" && entry.idempotencyKey,
   );
-  expect(networkRequests).toHaveLength(1);
-  expect(networkRequests[0].body).toMatchObject({
-    schema: "ylx.network-apply.v1",
-    mode: "wifi-client",
-    ssid: "Lab WiFi",
+  expect(networkRequests).toHaveLength(0);
+});
+
+test("fixture 请求日志会脱敏网络 secret 字段", async ({ request }) => {
+  const sentinel = "sentinel-psk-never-log";
+  await request.post("/api/v4/network", {
+    data: {
+      schema: "ylx.network-apply.v1",
+      mode: "wifi-client",
+      ssid: "Lab WiFi",
+      psk: sentinel,
+      nested: { password: sentinel, token: sentinel, secret: sentinel },
+    },
+    headers: { "Idempotency-Key": "fixture-redaction" },
   });
+
+  const response = await request.get("/__fixture/requests");
+  /** @type {{requests: FixtureRequestLog[]}} */
+  const body = await response.json();
+  const serialized = JSON.stringify(body.requests);
+  expect(serialized).not.toContain(sentinel);
+  expect(serialized).toContain("<redacted>");
 });
 
 test("无录制卷时设备保持在线并显示空会话列表", async ({ page, request }) => {
