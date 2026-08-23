@@ -2,11 +2,22 @@ import type {
   CameraFocusStatus,
   CaptureStatus,
   DeviceDescriptor,
+  NetworkApplyDesiredState,
+  NetworkCredentialReceipt,
+  NetworkScanResult,
   NetworkStatus,
+  NetworkTransactionReceipt,
   SessionDetail,
   SessionList,
   UnsuccessfulOutcome,
 } from "./types";
+import {
+  isNetworkApplyDesiredState,
+  isNetworkCredentialReceipt,
+  isNetworkScanResult,
+  isNetworkStatus,
+  isNetworkTransactionReceipt,
+} from "./network";
 
 export const API_ROOT = "/api/v4";
 export const DEVICE_API_CONSUMER_SUPPORT = {
@@ -18,8 +29,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "3d419ab5b86ac48306db92cd08a0806c2dc8168b12d4e8d4e643bfa24b7e8e84",
-      bytes: 103455,
+      sha256: "75f380e09a17972f65b6e64848be9754e7b730f88aa53bd7f3899f4b24e4da63",
+      bytes: 115169,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -92,11 +103,11 @@ function assertCaptureStatus<T extends CaptureStatus | null>(capture: T): T {
   return capture;
 }
 
-function assertNetworkStatus<T extends NetworkStatus | null>(network: T): T {
-  if (network && network.schema !== "ylx.network-status.v1") {
-    const envelope = network as NetworkStatus & { format?: string };
+function assertNetworkStatus(network: unknown): NetworkStatus | null {
+  if (network !== null && !isNetworkStatus(network)) {
+    const envelope = network as { schema?: string; format?: string };
     throw new DeviceApiError(
-      "不支持的 Device API network status schema",
+      "Device API network status 不符合 v4 契约",
       502,
       "unsupported_device_api_schema",
       {
@@ -106,6 +117,39 @@ function assertNetworkStatus<T extends NetworkStatus | null>(network: T): T {
     );
   }
   return network;
+}
+
+function assertNetworkScan(scan: unknown): NetworkScanResult {
+  if (!isNetworkScanResult(scan)) {
+    throw new DeviceApiError(
+      "Device API network scan 不符合 v4 契约",
+      502,
+      "unsupported_device_api_schema",
+    );
+  }
+  return scan;
+}
+
+function assertNetworkCredential(receipt: unknown): NetworkCredentialReceipt {
+  if (!isNetworkCredentialReceipt(receipt)) {
+    throw new DeviceApiError(
+      "Device API network credential receipt 不符合 v4 契约",
+      502,
+      "unsupported_device_api_schema",
+    );
+  }
+  return receipt;
+}
+
+function assertNetworkReceipt(receipt: unknown): NetworkTransactionReceipt {
+  if (!isNetworkTransactionReceipt(receipt)) {
+    throw new DeviceApiError(
+      "Device API network transaction receipt 不符合 v4 契约",
+      502,
+      "unsupported_device_api_schema",
+    );
+  }
+  return receipt;
 }
 
 export async function makeApiError(response: Response): Promise<DeviceApiError> {
@@ -228,11 +272,15 @@ async function requestOptionalJson<T>(path: string, options: RequestInit = {}): 
 }
 
 function commandInit(body: unknown): RequestInit {
+  return commandInitWithKey(body, idempotencyKey());
+}
+
+function commandInitWithKey(body: unknown, key: string): RequestInit {
   return {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey(),
+      "Idempotency-Key": key,
     },
     body: JSON.stringify(body),
   };
@@ -249,7 +297,42 @@ export const deviceApi = Object.freeze({
   getSafeSwap: () =>
     requestOptionalJson<{ schema: string; receipt: unknown }>("/capture/safe-swap"),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),
-  getNetwork: () => requestOptionalJson<NetworkStatus>("/network").then(assertNetworkStatus),
+  getNetwork: () => requestOptionalJson<unknown>("/network").then(assertNetworkStatus),
+  scanNetworks: () => requestJson<unknown>("/network/scan").then(assertNetworkScan),
+  createNetworkCredential: (passphrase: string) =>
+    requestJson<unknown>("/network/credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schema: "ylx.network-credential-request.v1", passphrase }),
+    }).then(assertNetworkCredential),
+  applyNetwork: (desired: NetworkApplyDesiredState, key = idempotencyKey()) => {
+    if (!isNetworkApplyDesiredState(desired)) {
+      return Promise.reject(
+        new DeviceApiError(
+          "网络目标状态不符合 v4 契约",
+          400,
+          "invalid_network_desired_state",
+        ),
+      );
+    }
+    return requestJson<unknown>(
+      "/network/apply",
+      commandInitWithKey({ schema: "ylx.network-apply-request.v1", desired }, key),
+    ).then(assertNetworkReceipt);
+  },
+  retryNetwork: (transactionId: string, key = idempotencyKey()) =>
+    requestJson<unknown>(
+      "/network/retry",
+      commandInitWithKey(
+        { schema: "ylx.network-retry-request.v1", transaction_id: transactionId },
+        key,
+      ),
+    ).then(assertNetworkReceipt),
+  forgetNetwork: (key = idempotencyKey()) =>
+    requestJson<unknown>(
+      "/network/forget",
+      commandInitWithKey({ schema: "ylx.network-forget-request.v1" }, key),
+    ).then(assertNetworkReceipt),
 
   listSessions: ({ limit = 25, cursor = null }: ListSessionsQuery = {}) => {
     const query = new URLSearchParams({ limit: String(limit) });

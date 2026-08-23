@@ -28,6 +28,77 @@ async function openPanel(page, name) {
 }
 
 /**
+ * @param {import("@playwright/test").APIRequestContext} request
+ * @param {string} path
+ */
+async function fixtureRequestCount(request, path) {
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  return body.requests.filter((entry) => entry.path === path).length;
+}
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {string} viewportName
+ */
+async function expectNoHorizontalOverflow(page, viewportName) {
+  const report = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const panel = document.querySelector(".panel");
+    const panelBody = document.querySelector(".panel-body");
+    const offenders = Array.from(document.querySelectorAll("body *"))
+      .filter((element) => {
+        if (element.closest(".frame") || element.closest(".visually-hidden")) {
+          return false;
+        }
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.visibility !== "hidden" &&
+          (rect.left < -0.5 || rect.right > viewportWidth + 0.5)
+        );
+      })
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const className =
+          typeof element.className === "string" ? element.className : element.tagName.toLowerCase();
+        return {
+          element: `${element.tagName.toLowerCase()}.${className}`,
+          left: Math.round(rect.left * 10) / 10,
+          right: Math.round(rect.right * 10) / 10,
+        };
+      });
+
+    return {
+      viewportWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      panelClientWidth: panel?.clientWidth ?? null,
+      panelScrollWidth: panel?.scrollWidth ?? null,
+      panelBodyClientWidth: panelBody?.clientWidth ?? null,
+      panelBodyScrollWidth: panelBody?.scrollWidth ?? null,
+      offenders,
+    };
+  });
+
+  expect(report.documentScrollWidth, `${viewportName}: document overflow`).toBeLessThanOrEqual(
+    report.viewportWidth,
+  );
+  expect(report.bodyScrollWidth, `${viewportName}: body overflow`).toBeLessThanOrEqual(
+    report.viewportWidth,
+  );
+  expect(report.panelScrollWidth, `${viewportName}: panel overflow`).toBe(
+    report.panelClientWidth,
+  );
+  expect(report.panelBodyScrollWidth, `${viewportName}: panel body overflow`).toBe(
+    report.panelBodyClientWidth,
+  );
+  expect(report.offenders, `${viewportName}: elements outside viewport`).toEqual([]);
+}
+
+/**
  * @param {import("@playwright/test").Page} page
  * @param {{limit?: number, delayMs?: number}} [options]
  * @returns {Promise<PreviewRouteMetrics>}
@@ -268,8 +339,7 @@ test("设备未声明网络变更能力时仍读取只读网络状态和 mDNS", 
   await expect(page.locator(".connection")).toHaveText("已连接");
   await openPanel(page, "设备与链路");
   await expect(page.getByTestId("network-mdns")).toHaveText("rp-ylx.local:8080");
-  await expect(page.locator("#network-status")).toContainText("网络状态只读");
-  await expect(page.locator("#network-status")).toContainText("配置修改未开放");
+  await expect(page.locator("#network-status")).toHaveText("未启用");
   await expect(page.getByRole("form", { name: "网络设置" })).toHaveCount(0);
   await expect
     .poll(async () => {
@@ -441,19 +511,18 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   expect(preview.maxInFlight).toBe(1);
 });
 
-test("v4 网络状态和事件只读且不暴露 Wi-Fi 密码表单", async ({ page, request }) => {
+test("v4 网络状态和事件在变更禁用时保持只读", async ({ page, request }) => {
   await page.goto("/");
   await openPanel(page, "设备与链路");
 
   await expect(page.getByTestId("network-wifi")).toContainText("未启用");
   await expect(page.getByTestId("network-modes")).toContainText("设备热点");
   await expect(page.getByTestId("network-desired")).toContainText("设备热点");
-  await expect(page.getByTestId("network-transaction")).toContainText("无进行中事务");
-  await expect(page.getByTestId("network-mutation")).toContainText("不可用");
+  await expect(page.getByTestId("network-transaction")).toContainText("无网络事务");
+  await expect(page.getByTestId("network-mutation")).toContainText("未启用");
   await expect(page.getByTestId("network-mutation")).toContainText("apply / retry / forget");
   await expect(page.getByTestId("network-concurrency")).toContainText("未验证");
-  await expect(page.locator("#network-status")).toContainText("网络状态只读");
-  await expect(page.locator("#network-status")).toContainText("配置修改未开放");
+  await expect(page.locator("#network-status")).toHaveText("未启用");
   await expect(page.getByLabel("SSID")).toHaveCount(0);
   await expect(page.getByLabel("密码")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /应用网络|确认应用网络/ })).toHaveCount(0);
@@ -488,11 +557,11 @@ test("v4 网络状态和事件只读且不暴露 Wi-Fi 密码表单", async ({ p
     data: {
       operation: "apply",
       status: "rescued",
-      stage: "falling_back",
+      stage: "rescued",
     },
   });
   await expect(page.getByTestId("network-transaction")).toContainText(
-    "apply / rescued / falling_back",
+    "apply / rescued / rescued",
   );
   await expect
     .poll(async () => {
@@ -512,6 +581,178 @@ test("v4 网络状态和事件只读且不暴露 Wi-Fi 密码表单", async ({ p
   );
   expect(body.requests.map((entry) => entry.path)).toContain("/api/v4/network/events");
   expect(networkMutationRequests).toHaveLength(0);
+});
+
+test("首次打开网络面板自动扫描一次且重开不重复", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { networkMutation: true } });
+  await page.goto("/");
+
+  const deviceTrigger = page.getByRole("button", { name: "设备与链路", exact: true });
+  await expect.poll(() => fixtureRequestCount(request, "/api/v4/network/scan")).toBe(0);
+  await deviceTrigger.click();
+
+  const panel = page.getByRole("complementary", { name: "设备与链路" });
+  const networkSelect = panel.getByLabel("Wi-Fi 网络");
+  await expect(networkSelect.locator("option")).toHaveCount(3);
+  await expect.poll(() => fixtureRequestCount(request, "/api/v4/network/scan")).toBe(1);
+
+  await panel.getByRole("button", { name: "关闭" }).click();
+  await expect(deviceTrigger).toBeFocused();
+  await deviceTrigger.click();
+  await expect(networkSelect.locator("option")).toHaveCount(3);
+  await page.waitForTimeout(150);
+  expect(await fixtureRequestCount(request, "/api/v4/network/scan")).toBe(1);
+
+  await panel.getByRole("button", { name: "扫描 Wi-Fi" }).click();
+  await expect.poll(() => fixtureRequestCount(request, "/api/v4/network/scan")).toBe(2);
+});
+
+test("受保护 Wi-Fi 通过一次性凭证完成应用、重试和忘记", async ({ page, request }) => {
+  const sentinel = "fixture-passphrase-never-persist";
+  await request.post("/__fixture/config", { data: { networkMutation: true } });
+  await page.goto("/");
+  await openPanel(page, "设备与链路");
+
+  await expect(page.locator("#network-status")).toHaveText("网络变更可用");
+  const networkSelect = page.getByLabel("Wi-Fi 网络");
+  await expect(networkSelect.locator("option")).toHaveCount(3);
+  await networkSelect.selectOption({ index: 1 });
+
+  const passphrase = page.getByLabel("Wi-Fi 密码");
+  await passphrase.fill(sentinel);
+  const applyTrigger = page
+    .getByRole("form", { name: "网络设置" })
+    .locator('button[type="submit"]');
+  await applyTrigger.click();
+  const applyDialog = page.getByRole("alertdialog", { name: /切换到 Lab WiFi/ });
+  await expect(applyDialog).toBeVisible();
+  const applyCancel = applyDialog.getByRole("button", { name: "取消" });
+  await expect(applyCancel).toBeFocused();
+  await applyCancel.click();
+  await expect(applyDialog).toHaveCount(0);
+  await expect(applyTrigger).toBeFocused();
+
+  await applyTrigger.click();
+  await expect(applyCancel).toBeFocused();
+  await applyDialog.getByRole("button", { name: "确认切换" }).click();
+  await expect(applyTrigger).toBeFocused();
+  await expect(passphrase).toHaveValue("");
+  await expect(page.getByTestId("network-transaction")).toContainText("apply / accepted");
+
+  await expect
+    .poll(async () => {
+      const response = await request.get("/__fixture/requests");
+      const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+      return body.requests.filter((entry) =>
+        ["/api/v4/network/credentials", "/api/v4/network/apply"].includes(entry.path),
+      ).length;
+    })
+    .toBe(2);
+
+  let response = await request.get("/__fixture/requests");
+  let body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  const credentialRequest = body.requests.find(
+    (entry) => entry.path === "/api/v4/network/credentials",
+  );
+  const applyRequest = body.requests.find((entry) => entry.path === "/api/v4/network/apply");
+  expect(credentialRequest?.idempotencyKey).toBeNull();
+  expect(applyRequest?.idempotencyKey).toBeTruthy();
+  expect(JSON.stringify(body.requests)).not.toContain(sentinel);
+  expect(JSON.stringify(body.requests)).not.toContain("cred-fixture-");
+  expect(JSON.stringify(credentialRequest?.body)).toContain("<redacted>");
+  expect(JSON.stringify(applyRequest?.body)).toContain("<redacted>");
+
+  await request.post("/__fixture/network-transaction-event", {
+    data: { status: "rescued", stage: "rescued" },
+  });
+  await expect(page.getByTestId("network-transaction")).toContainText("apply / rescued / rescued");
+  const retry = page.getByRole("button", { name: "重试事务" });
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect(page.getByTestId("network-transaction")).toContainText("retry / accepted");
+
+  await request.post("/__fixture/network-transaction-event", {
+    data: { status: "committed", stage: "committed" },
+  });
+  await expect(page.getByTestId("network-transaction")).toContainText(
+    "retry / committed / committed",
+  );
+  await expect(page.locator("#network-status")).toHaveText("已保存并验证当前 Wi-Fi");
+
+  const forgetTrigger = page.getByRole("button", { name: "忘记 Wi-Fi" });
+  await forgetTrigger.click();
+  const forgetDialog = page.getByRole("alertdialog", { name: "忘记已保存的 Wi-Fi" });
+  await expect(forgetDialog).toBeVisible();
+  const forgetCancel = forgetDialog.getByRole("button", { name: "取消" });
+  await expect(forgetCancel).toBeFocused();
+  await forgetCancel.click();
+  await expect(forgetDialog).toHaveCount(0);
+  await expect(forgetTrigger).toBeFocused();
+
+  await forgetTrigger.click();
+  await expect(forgetCancel).toBeFocused();
+  await forgetDialog.getByRole("button", { name: "确认忘记" }).click();
+  await expect(page.getByRole("button", { name: "正在忘记" })).toBeFocused();
+
+  await expect
+    .poll(async () => {
+      response = await request.get("/__fixture/requests");
+      body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+      return body.requests.filter((entry) => entry.path === "/api/v4/network/forget").length;
+    })
+    .toBe(1);
+});
+
+test("开放 Wi-Fi 应用不创建凭证引用", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { networkMutation: true } });
+  await page.goto("/");
+  await openPanel(page, "设备与链路");
+  const networkSelect = page.getByLabel("Wi-Fi 网络");
+  await expect(networkSelect.locator("option")).toHaveCount(3);
+  await networkSelect.selectOption({ index: 2 });
+  await expect(page.getByLabel("Wi-Fi 密码")).toHaveCount(0);
+  await page.getByRole("button", { name: "应用网络" }).click();
+  await page
+    .getByRole("alertdialog", { name: /切换到 Open Lab/ })
+    .getByRole("button", { name: "确认切换" })
+    .click();
+
+  await expect(page.getByTestId("network-transaction")).toContainText("apply / accepted");
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  expect(
+    body.requests.filter((entry) => entry.path === "/api/v4/network/credentials"),
+  ).toHaveLength(0);
+  expect(body.requests.filter((entry) => entry.path === "/api/v4/network/apply")).toHaveLength(1);
+});
+
+test("320、360 和手机横屏下网络确认流程无水平溢出", async ({ page, request }, testInfo) => {
+  const viewports = [
+    { name: "320-portrait", width: 320, height: 568 },
+    { name: "360-portrait", width: 360, height: 640 },
+    { name: "phone-landscape", width: 667, height: 375 },
+  ];
+  await request.post("/__fixture/config", { data: { networkMutation: true } });
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto("/");
+    const panel = await openPanel(page, "设备与链路");
+    const networkSelect = panel.getByLabel("Wi-Fi 网络");
+    await expect(networkSelect.locator("option")).toHaveCount(3);
+    await networkSelect.selectOption({ index: 1 });
+    await panel.getByLabel("Wi-Fi 密码").fill("layout-passphrase");
+    await panel.getByRole("button", { name: "应用网络" }).click();
+    const dialog = panel.getByRole("alertdialog", { name: /切换到 Lab WiFi/ });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "取消" })).toBeFocused();
+
+    await expectNoHorizontalOverflow(page, viewport.name);
+    await page.screenshot({
+      path: testInfo.outputPath(`network-${viewport.name}.png`),
+      animations: "disabled",
+    });
+  }
 });
 
 test("fixture 请求日志会脱敏网络 secret 字段", async ({ request }) => {

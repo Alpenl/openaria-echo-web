@@ -72,6 +72,8 @@ const previewJpeg = Buffer.from(
  * @property {boolean} eventsUnavailable
  * @property {boolean} sessionsVolumeUnavailable
  * @property {boolean} networkUnavailable
+ * @property {Set<string>} networkCredentialRefs
+ * @property {number} nextNetworkCredential
  * @property {number} sessionsDelayMs
  * @property {number} sessionPublicationDelayMs
  * @property {number} eventSnapshotDelayMs
@@ -101,12 +103,12 @@ const makeCameraFocusStatus = () => ({
 
 /** @param {DeviceRuntime["network"]} network */
 function networkDevices(network) {
+  const wireless = network.wifi_client.interface ? network.wifi_client : network.ap;
   return [
-    { interface: network.ap.interface ?? "wlan0", type: "wifi-ap", state: network.ap.state },
     {
-      interface: network.wifi_client.interface ?? "wlan0",
-      type: "wifi-client",
-      state: network.wifi_client.state,
+      interface: wireless.interface ?? "wlan0",
+      type: "wifi",
+      state: wireless.state,
     },
     { interface: network.wired.interface ?? "eth0", type: "ethernet", state: network.wired.state },
   ];
@@ -116,6 +118,8 @@ function networkDevices(network) {
 function makeNetworkTransaction(overrides = {}) {
   return {
     schema: "ylx.network-transaction.v1",
+    authority_epoch: authorityEpoch,
+    source_revision: 2,
     transaction_id: "0198d2a0-41a0-7b7a-a751-0e86a39d4db1",
     operation: "apply",
     status: "rescued",
@@ -124,30 +128,38 @@ function makeNetworkTransaction(overrides = {}) {
       mode: "wifi-client",
       wifi_client: {
         ssid: "Lab WiFi",
+        security: "wpa2-personal",
         credential_state: "stored",
       },
       ethernet: null,
     },
     accepted_at: "2026-08-12T02:25:02Z",
     updated_at: "2026-08-12T02:25:12Z",
+    deadline: null,
+    recovery_action: "reconnect_rescue_ap",
     rescue: {
       ap_validated: true,
       fallback_mode: "hotspot",
       failure_trigger_seconds: 10,
     },
     error: {
-      code: "activation_failed",
+      code: "dhcp_timeout",
       message: "candidate Wi-Fi failed before commit",
+      retryable: true,
     },
     ...overrides,
   };
 }
 
-/** @param {DeviceRuntime} runtime @returns {NetworkStatus} */
-function makeNetworkStatusFromRuntime(runtime) {
+/** @param {DeviceRuntime} runtime @param {number} [sourceRevision] @returns {NetworkStatus} */
+function makeNetworkStatusFromRuntime(runtime, sourceRevision = 1) {
   return {
     schema: "ylx.network-status.v1",
+    authority_epoch: authorityEpoch,
+    source_revision: sourceRevision,
     observed_at: runtime.observed_at,
+    saved: false,
+    verified: false,
     desired: {
       mode: "hotspot",
       wifi_client: null,
@@ -172,6 +184,7 @@ function makeNetworkStatusFromRuntime(runtime) {
     },
     mutation_capability: {
       enabled: false,
+      disabled_reason: "not_enabled",
       operations: ["apply", "retry", "forget"],
       idempotency_key_required: true,
       secret_handling: "opaque_credential_reference_only",
@@ -340,6 +353,8 @@ function makeFixture() {
     eventsUnavailable: false,
     sessionsVolumeUnavailable: false,
     networkUnavailable: false,
+    networkCredentialRefs: new Set(),
+    nextNetworkCredential: 1,
     sessionsDelayMs: 0,
     sessionPublicationDelayMs: 0,
     eventSnapshotDelayMs: 0,
@@ -409,6 +424,8 @@ function networkEvent(type = "snapshot", data = null) {
   return {
     schema: "ylx.network-event.v1",
     sse_delivery_id: deliveryId,
+    authority_epoch: eventData.authority_epoch,
+    source_revision: eventData.source_revision,
     occurred_at: "2026-08-12T02:25:01Z",
     type,
     transaction_id:
@@ -584,7 +601,15 @@ function setNetworkRuntime(network, connectionMethod) {
       network: structuredClone(network),
     },
   };
-  fixture.networkStatus = makeNetworkStatusFromRuntime(fixture.device.runtime);
+  const previous = fixture.networkStatus;
+  fixture.networkStatus = {
+    ...makeNetworkStatusFromRuntime(fixture.device.runtime, previous.source_revision + 1),
+    saved: previous.saved,
+    verified: previous.verified,
+    desired: previous.desired,
+    transaction: previous.transaction,
+    mutation_capability: previous.mutation_capability,
+  };
 }
 
 /** @param {IncomingMessage} request @returns {Promise<unknown | null>} */
@@ -608,7 +633,14 @@ async function readJson(request) {
   return body;
 }
 
-const SECRET_BODY_KEYS = new Set(["psk", "password", "secret", "token"]);
+const SECRET_BODY_KEYS = new Set([
+  "credential_ref",
+  "passphrase",
+  "password",
+  "psk",
+  "secret",
+  "token",
+]);
 
 /** @param {unknown} value @returns {unknown} */
 function redactSecrets(value) {
@@ -649,6 +681,91 @@ async function failClosedNetworkMutation(request, response, apiRequest) {
       },
     },
   });
+}
+
+function networkProblem(response, status, code, message) {
+  sendJson(response, status, {
+    schema: "ylx.api-error.v2",
+    error: {
+      code,
+      message,
+      request_id: "6f214fbd-88c0-4820-a956-2044b1b0488f",
+      retryable: status >= 500,
+    },
+  });
+}
+
+function makeNetworkScan() {
+  return {
+    schema: "ylx.network-scan.v1",
+    authority_epoch: fixture.networkStatus.authority_epoch,
+    source_revision: fixture.networkStatus.source_revision,
+    scanned_at: "2026-08-23T10:30:00Z",
+    networks: [
+      {
+        ssid: "Lab WiFi",
+        hidden: false,
+        security: "wpa2-personal",
+        signal_dbm: -42,
+        credential_required: true,
+      },
+      {
+        ssid: "Open Lab",
+        hidden: false,
+        security: "open",
+        signal_dbm: -61,
+        credential_required: false,
+      },
+      {
+        ssid: null,
+        hidden: true,
+        security: "wpa3-personal",
+        signal_dbm: -75,
+        credential_required: true,
+      },
+    ],
+  };
+}
+
+function nextNetworkTransactionId() {
+  const suffix = (0xe86a39d4db0 + fixture.nextNetworkCredential).toString(16).padStart(12, "0");
+  fixture.nextNetworkCredential += 1;
+  return `0198d2a0-41a0-7b7a-a751-${suffix}`;
+}
+
+function acceptFixtureNetworkTransaction(operation, desired) {
+  const sourceRevision = fixture.networkStatus.source_revision + 1;
+  const transaction = makeNetworkTransaction({
+    authority_epoch: fixture.networkStatus.authority_epoch,
+    source_revision: sourceRevision,
+    transaction_id: nextNetworkTransactionId(),
+    operation,
+    status: "accepted",
+    stage: "accepted",
+    desired,
+    accepted_at: "2026-08-23T10:31:00Z",
+    updated_at: "2026-08-23T10:31:00Z",
+    deadline: null,
+    recovery_action: "await_device",
+    rescue: {
+      ap_validated: true,
+      fallback_mode: "hotspot",
+      failure_trigger_seconds: 10,
+    },
+    error: null,
+  });
+  fixture.networkStatus = {
+    ...fixture.networkStatus,
+    source_revision: sourceRevision,
+    observed_at: "2026-08-23T10:31:00Z",
+    desired,
+    transaction: { current: transaction, latest: fixture.networkStatus.transaction.latest },
+  };
+  return {
+    schema: "ylx.network-transaction-receipt.v1",
+    accepted_at: transaction.accepted_at,
+    transaction,
+  };
 }
 
 /** @param {string} displayName */
@@ -1032,6 +1149,14 @@ const server = createServer(async (request, response) => {
     }
     if (typeof config.networkMutation === "boolean") {
       fixture.device.capabilities.network_mutation = config.networkMutation;
+      fixture.networkStatus = {
+        ...fixture.networkStatus,
+        mutation_capability: {
+          ...fixture.networkStatus.mutation_capability,
+          enabled: config.networkMutation,
+          disabled_reason: config.networkMutation ? null : "not_enabled",
+        },
+      };
     }
     if (typeof config.networkUnavailable === "boolean") {
       fixture.networkUnavailable = config.networkUnavailable;
@@ -1148,13 +1273,46 @@ const server = createServer(async (request, response) => {
     const body = /** @type {{status?: string, stage?: string, operation?: string}} */ (
       await readJson(request)
     );
+    const status = body.status ?? "rescued";
+    const sourceRevision = fixture.networkStatus.source_revision + 1;
+    const active = fixture.networkStatus.transaction.current;
     const transaction = makeNetworkTransaction({
-      status: body.status ?? "rescued",
-      stage: body.stage ?? "falling_back",
-      operation: body.operation ?? "apply",
+      ...(active ?? {}),
+      authority_epoch: fixture.networkStatus.authority_epoch,
+      source_revision: sourceRevision,
+      status,
+      stage:
+        body.stage ??
+        (status === "rescued" ? "rescued" : status === "committed" ? "committed" : "failed"),
+      operation: body.operation ?? active?.operation ?? "apply",
+      deadline: null,
+      recovery_action:
+        status === "rescued"
+          ? "reconnect_rescue_ap"
+          : status === "committed"
+            ? "reconnect_target_lan"
+            : "retry",
+      error:
+        status === "rescued" || status === "failed"
+          ? {
+              code: "dhcp_timeout",
+              message: "candidate Wi-Fi failed before commit",
+              retryable: true,
+            }
+          : null,
     });
     fixture.networkStatus = {
       ...fixture.networkStatus,
+      source_revision: sourceRevision,
+      observed_at: transaction.updated_at,
+      saved:
+        status === "committed" && transaction.desired.mode === "wifi-client"
+          ? true
+          : fixture.networkStatus.saved,
+      verified:
+        status === "committed" && transaction.desired.mode === "wifi-client"
+          ? true
+          : fixture.networkStatus.verified,
       transaction: {
         current: null,
         latest: transaction,
@@ -1350,6 +1508,50 @@ const server = createServer(async (request, response) => {
     }
   }
 
+  if (url.pathname === "/api/v4/network/scan" && request.method === "GET") {
+    if (fixture.networkUnavailable) {
+      networkProblem(response, 503, "network_manager_unavailable", "Wi-Fi 扫描暂不可用");
+      return;
+    }
+    sendJson(response, 200, makeNetworkScan());
+    return;
+  }
+
+  if (url.pathname === "/api/v4/network/credentials" && request.method === "POST") {
+    if (!fixture.networkStatus.mutation_capability.enabled) {
+      await failClosedNetworkMutation(request, response, apiRequest);
+      return;
+    }
+    const body = await readJson(request);
+    if (apiRequest) {
+      apiRequest.body = redactSecrets(body);
+    }
+    if (
+      !body ||
+      typeof body !== "object" ||
+      Array.isArray(body) ||
+      Object.keys(body).sort().join("|") !== "passphrase|schema" ||
+      body.schema !== "ylx.network-credential-request.v1" ||
+      typeof body.passphrase !== "string" ||
+      Buffer.byteLength(body.passphrase) < 8 ||
+      Buffer.byteLength(body.passphrase) > 63
+    ) {
+      networkProblem(response, 400, "invalid_request", "Wi-Fi 密码不符合 v4 契约");
+      return;
+    }
+    const credentialRef = `cred-fixture-${fixture.nextNetworkCredential++}`;
+    fixture.networkCredentialRefs.add(credentialRef);
+    sendJson(response, 201, {
+      schema: "ylx.network-credential-receipt.v1",
+      credential_ref: credentialRef,
+      issued_at: "2026-08-23T10:30:00Z",
+      expires_at: "2026-08-23T10:31:00Z",
+      ttl_seconds: 60,
+      single_use: true,
+    });
+    return;
+  }
+
   if (url.pathname === "/api/v4/network/events" && request.method === "GET") {
     if (fixture.networkUnavailable) {
       sendJson(response, 404, {
@@ -1398,12 +1600,89 @@ const server = createServer(async (request, response) => {
   }
 
   if (
-    request.method !== "GET" &&
+    request.method === "POST" &&
     ["/api/v4/network/apply", "/api/v4/network/retry", "/api/v4/network/forget"].includes(
       url.pathname,
     )
   ) {
-    await failClosedNetworkMutation(request, response, apiRequest);
+    if (!fixture.networkStatus.mutation_capability.enabled) {
+      await failClosedNetworkMutation(request, response, apiRequest);
+      return;
+    }
+    const body = await readJson(request);
+    if (apiRequest) {
+      apiRequest.body = redactSecrets(body);
+    }
+    if (!request.headers["idempotency-key"] || !body || typeof body !== "object") {
+      networkProblem(response, 400, "invalid_request", "网络命令缺少幂等键或请求正文");
+      return;
+    }
+
+    let receipt;
+    if (url.pathname.endsWith("/apply")) {
+      const desired = body.desired;
+      const wifi = desired?.wifi_client;
+      const security = wifi?.security;
+      const credentialRef = wifi?.credential_ref;
+      const protectedNetwork = security !== "open";
+      const validCredential =
+        typeof credentialRef === "string" && fixture.networkCredentialRefs.has(credentialRef);
+      if (
+        body.schema !== "ylx.network-apply-request.v1" ||
+        desired?.mode !== "wifi-client" ||
+        desired?.ethernet !== null ||
+        typeof wifi?.ssid !== "string" ||
+        !["open", "wpa2-personal", "wpa3-personal", "wpa2-wpa3-personal"].includes(security) ||
+        (protectedNetwork && !validCredential) ||
+        (!protectedNetwork && credentialRef !== undefined)
+      ) {
+        networkProblem(
+          response,
+          422,
+          "invalid_network_desired_state",
+          "网络目标状态不符合 v4 契约",
+        );
+        return;
+      }
+      if (validCredential) {
+        fixture.networkCredentialRefs.delete(credentialRef);
+      }
+      receipt = acceptFixtureNetworkTransaction("apply", {
+        mode: "wifi-client",
+        wifi_client: {
+          ssid: wifi.ssid,
+          security,
+          credential_state: protectedNetwork ? "stored" : "absent",
+        },
+        ethernet: null,
+      });
+    } else if (url.pathname.endsWith("/retry")) {
+      const retained =
+        fixture.networkStatus.transaction.latest ?? fixture.networkStatus.transaction.current;
+      if (
+        body.schema !== "ylx.network-retry-request.v1" ||
+        typeof body.transaction_id !== "string" ||
+        retained?.transaction_id !== body.transaction_id
+      ) {
+        networkProblem(response, 404, "network_transaction_not_found", "没有可重试的网络事务");
+        return;
+      }
+      receipt = acceptFixtureNetworkTransaction("retry", retained.desired);
+    } else {
+      if (body.schema !== "ylx.network-forget-request.v1" || Object.keys(body).length !== 1) {
+        networkProblem(response, 400, "invalid_request", "忘记网络请求不符合 v4 契约");
+        return;
+      }
+      receipt = acceptFixtureNetworkTransaction("forget", {
+        mode: "hotspot",
+        wifi_client: null,
+        ethernet: null,
+      });
+      fixture.networkStatus.saved = false;
+      fixture.networkStatus.verified = false;
+    }
+    sendJson(response, 202, receipt);
+    broadcastNetworkTransaction(receipt.transaction);
     return;
   }
 
