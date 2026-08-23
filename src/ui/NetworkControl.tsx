@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { NetworkScanEntry, NetworkWifiSecurity } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
@@ -143,6 +143,33 @@ function NetworkProvisioning({ state }: { state: AppState }) {
     useState<NetworkWifiSecurity>("wpa2-personal");
   const [passphrase, setPassphrase] = useState("");
   const [confirmation, setConfirmation] = useState<"apply" | "forget" | null>(null);
+  const applyTriggerRef = useRef<HTMLButtonElement>(null);
+  const forgetTriggerRef = useRef<HTMLButtonElement>(null);
+  const confirmationCancelRef = useRef<HTMLButtonElement>(null);
+  const confirmationTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (state.networkScan === null) {
+      void store.scanNetworks();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (confirmation === null) {
+      return;
+    }
+    const focusFrame = window.requestAnimationFrame(() => confirmationCancelRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      const trigger = confirmationTriggerRef.current;
+      confirmationTriggerRef.current = null;
+      window.requestAnimationFrame(() => {
+        if (trigger?.isConnected) {
+          trigger.focus();
+        }
+      });
+    };
+  }, [confirmation]);
 
   const scanned = selectedNetwork(state, selection);
   const ssid = scanned?.ssid ?? manualSsid;
@@ -155,6 +182,11 @@ function NetworkProvisioning({ state }: { state: AppState }) {
   const passphraseBytes = utf8Length(passphrase);
   const passphraseValid = !requiresPassphrase || (passphraseBytes >= 8 && passphraseBytes <= 63);
   const canApply = canMutate && ssidValid && passphraseValid;
+  const applyTriggerFocusable =
+    canApply || (commandBusy && state.networkCommand.operation === "apply");
+  const forgetting = commandBusy && state.networkCommand.operation === "forget";
+  const forgetTriggerFocusable = canMutate || forgetting;
+  const showForgetAction = state.networkStatus?.saved === true || forgetting;
   const transaction = currentTransaction(state);
   const retryable =
     transaction !== null &&
@@ -193,6 +225,7 @@ function NetworkProvisioning({ state }: { state: AppState }) {
         onSubmit={(event) => {
           event.preventDefault();
           if (canApply) {
+            confirmationTriggerRef.current = applyTriggerRef.current;
             setConfirmation("apply");
           }
         }}
@@ -275,20 +308,42 @@ function NetworkProvisioning({ state }: { state: AppState }) {
           </label>
         ) : null}
 
-        <button type="submit" class="panel-command" disabled={!canApply}>
+        <button
+          ref={applyTriggerRef}
+          type="submit"
+          class="panel-command"
+          disabled={!applyTriggerFocusable}
+          aria-disabled={!canApply}
+        >
           {state.networkCommand.operation === "apply" && commandBusy ? "正在切换" : "应用网络"}
         </button>
       </form>
 
       {confirmation === "apply" ? (
-        <div class="network-confirm" role="alertdialog" aria-labelledby="network-apply-confirm-title">
+        <div
+          class="network-confirm"
+          role="alertdialog"
+          aria-labelledby="network-apply-confirm-title"
+          aria-describedby="network-apply-confirm-description"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setConfirmation(null);
+            }
+          }}
+        >
           <strong id="network-apply-confirm-title">切换到 {ssid}</strong>
-          <p>当前管理连接可能短暂中断。</p>
+          <p id="network-apply-confirm-description">当前管理连接可能短暂中断。</p>
           <div class="network-confirm-actions">
             <button type="button" class="panel-command" onClick={apply}>
               确认切换
             </button>
-            <button type="button" class="panel-secondary" onClick={() => setConfirmation(null)}>
+            <button
+              ref={confirmationCancelRef}
+              type="button"
+              class="panel-secondary"
+              onClick={() => setConfirmation(null)}
+            >
               取消
             </button>
           </div>
@@ -306,14 +361,21 @@ function NetworkProvisioning({ state }: { state: AppState }) {
             重试事务
           </button>
         ) : null}
-        {state.networkStatus?.saved ? (
+        {showForgetAction ? (
           <button
+            ref={forgetTriggerRef}
             type="button"
             class="panel-danger"
-            disabled={!canMutate}
-            onClick={() => setConfirmation("forget")}
+            disabled={!forgetTriggerFocusable}
+            aria-disabled={!canMutate}
+            onClick={() => {
+              if (canMutate) {
+                confirmationTriggerRef.current = forgetTriggerRef.current;
+                setConfirmation("forget");
+              }
+            }}
           >
-            忘记 Wi-Fi
+            {forgetting ? "正在忘记" : "忘记 Wi-Fi"}
           </button>
         ) : null}
       </div>
@@ -323,9 +385,16 @@ function NetworkProvisioning({ state }: { state: AppState }) {
           class="network-confirm danger"
           role="alertdialog"
           aria-labelledby="network-forget-title"
+          aria-describedby="network-forget-description"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setConfirmation(null);
+            }
+          }}
         >
           <strong id="network-forget-title">忘记已保存的 Wi-Fi</strong>
-          <p>设备将回到救援热点。</p>
+          <p id="network-forget-description">设备将回到救援热点。</p>
           <div class="network-confirm-actions">
             <button
               type="button"
@@ -337,7 +406,12 @@ function NetworkProvisioning({ state }: { state: AppState }) {
             >
               确认忘记
             </button>
-            <button type="button" class="panel-secondary" onClick={() => setConfirmation(null)}>
+            <button
+              ref={confirmationCancelRef}
+              type="button"
+              class="panel-secondary"
+              onClick={() => setConfirmation(null)}
+            >
               取消
             </button>
           </div>

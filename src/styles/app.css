@@ -1267,7 +1267,10 @@ a:hover {
 
 .panel-command:disabled,
 .panel-secondary:disabled,
-.panel-danger:disabled {
+.panel-danger:disabled,
+.panel-command[aria-disabled="true"],
+.panel-secondary[aria-disabled="true"],
+.panel-danger[aria-disabled="true"] {
   background: transparent;
   border-color: var(--hairline);
   color: var(--ink-3);

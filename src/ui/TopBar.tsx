@@ -74,9 +74,11 @@ export function TopBar({ state }: { state: AppState }) {
         <SessionsIcon />
       </button>
       <button
+        id="device-panel-trigger"
         type="button"
         class="icon-button"
         aria-pressed={state.panel === "device"}
+        aria-controls="device-panel"
         aria-label="设备与链路"
         title="设备与链路"
         onClick={() => {

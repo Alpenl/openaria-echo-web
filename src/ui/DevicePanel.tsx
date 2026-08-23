@@ -102,7 +102,7 @@ export function DevicePanel({ state }: { state: AppState }) {
   const receipt = state.safeSwapReceipt?.receipt ?? null;
 
   return (
-    <aside class="panel" aria-label="设备与链路">
+    <aside id="device-panel" class="panel" aria-label="设备与链路">
       <div class="panel-head">
         <span class="eyebrow">DEVICE</span>
         <span class="panel-title">设备与链路</span>
@@ -111,7 +111,12 @@ export function DevicePanel({ state }: { state: AppState }) {
           type="button"
           class="icon-button"
           aria-label="关闭"
-          onClick={() => store.dispatch({ type: "panel.closed" })}
+          onClick={() => {
+            store.dispatch({ type: "panel.closed" });
+            window.requestAnimationFrame(() =>
+              document.getElementById("device-panel-trigger")?.focus(),
+            );
+          }}
         >
           <CloseIcon />
         </button>
