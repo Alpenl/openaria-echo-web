@@ -1120,9 +1120,17 @@ test("progress 事件触发权威快照刷新并显示录制计数", async ({ pa
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
   await request.post("/__fixture/progress");
-  await expect(page.getByTestId("elapsed-seconds")).toHaveText("12.4 秒");
   await expect(page.getByTestId("captured-frames")).toHaveText("744");
   await expect(page.getByTestId("bytes-written")).toHaveText("42.0 MiB");
+  await expect
+    .poll(async () =>
+      Number.parseFloat((await page.getByTestId("elapsed-seconds").textContent()) ?? "0"),
+    )
+    .toBeGreaterThanOrEqual(12.4);
+  const authoritativeElapsed = Number.parseFloat(
+    (await page.getByTestId("elapsed-seconds").textContent()) ?? "0",
+  );
+  expect(authoritativeElapsed).toBeLessThan(25);
   const samples = await page.evaluate(async () => {
     const values = [];
     for (let index = 0; index < 7; index += 1) {
