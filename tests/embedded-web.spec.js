@@ -2,7 +2,7 @@
 
 import { expect, test } from "@playwright/test";
 
-/** @typedef {{path: string, idempotencyKey: string | null, body?: {schema?: string, mode?: string, ssid?: string}}} FixtureRequestLog */
+/** @typedef {{path: string, idempotencyKey: string | null, body?: unknown}} FixtureRequestLog */
 /** @typedef {{requests: number, inFlight: number, maxInFlight: number}} PreviewRouteMetrics */
 
 const FOCUS_PEAKING_PREVIEW_JPEG =
@@ -145,6 +145,7 @@ test("未知 Device API major 失败关闭且不回退 v3 raw", async ({ page, r
   expect(paths).not.toContain("/api/v4/capture/status");
   expect(paths).not.toContain("/api/v4/sessions");
   expect(paths).not.toContain("/api/v4/network");
+  expect(paths).not.toContain("/api/v4/network/events");
   expect(paths).not.toContain("/api/v4/capture/events");
   expect(paths).not.toContain("/api/v4/preview");
   expect(pageApiPaths.some((path) => path.startsWith("/api/v3/"))).toBe(false);
@@ -270,10 +271,18 @@ test("设备未声明网络变更能力时仍读取只读网络状态和 mDNS", 
   await expect(page.locator("#network-status")).toContainText("网络状态只读");
   await expect(page.locator("#network-status")).toContainText("配置修改未开放");
   await expect(page.getByRole("form", { name: "网络设置" })).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const response = await request.get("/__fixture/requests");
+      const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
+      return body.requests.some((entry) => entry.path === "/api/v4/network/events");
+    })
+    .toBe(true);
   const response = await request.get("/__fixture/requests");
   const body = /** @type {{requests: Array<{path: string}>}} */ (await response.json());
   const paths = body.requests.map((entry) => entry.path);
   expect(paths).toContain("/api/v4/network");
+  expect(paths).toContain("/api/v4/network/events");
   expect(warnings).toEqual([]);
 });
 
@@ -432,35 +441,64 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   expect(preview.maxInFlight).toBe(1);
 });
 
-test("临时网络 v0 状态只读且不暴露 Wi-Fi 密码表单", async ({ page, request }) => {
+test("v4 网络状态和事件只读且不暴露 Wi-Fi 密码表单", async ({ page, request }) => {
   await page.goto("/");
   await openPanel(page, "设备与链路");
 
   await expect(page.getByTestId("network-wifi")).toContainText("未启用");
-  await expect(page.getByTestId("network-modes")).toContainText("Wi-Fi");
+  await expect(page.getByTestId("network-modes")).toContainText("设备热点");
+  await expect(page.getByTestId("network-desired")).toContainText("设备热点");
+  await expect(page.getByTestId("network-transaction")).toContainText("无进行中事务");
+  await expect(page.getByTestId("network-mutation")).toContainText("不可用");
+  await expect(page.getByTestId("network-mutation")).toContainText("apply / retry / forget");
+  await expect(page.getByTestId("network-concurrency")).toContainText("未验证");
   await expect(page.locator("#network-status")).toContainText("网络状态只读");
   await expect(page.locator("#network-status")).toContainText("配置修改未开放");
   await expect(page.getByLabel("SSID")).toHaveCount(0);
   await expect(page.getByLabel("密码")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /应用网络|确认应用网络/ })).toHaveCount(0);
 
+  await request.post("/__fixture/network-snapshot", {
+    data: {
+      defaultRoute: "wifi_client",
+      wifiState: "connected",
+      wifiSsid: "Lab WiFi",
+      wifiAddress: "192.168.50.24/24",
+    },
+  });
+  await expect(page.getByTestId("network-default-route")).toHaveText("Wi-Fi");
+  await expect(page.getByTestId("network-wifi")).toContainText("Lab WiFi");
+  await expect
+    .poll(async () => {
+      const response = await request.get("/__fixture/requests");
+      const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+      return body.requests.some((entry) => entry.path === "/api/v4/network/events");
+    })
+    .toBe(true);
+
   const response = await request.get("/__fixture/requests");
   /** @type {{requests: FixtureRequestLog[]}} */
   const body = await response.json();
-  const networkRequests = body.requests.filter(
-    (entry) => entry.path === "/api/v4/network" && entry.idempotencyKey,
+  const networkMutationRequests = body.requests.filter(
+    (entry) => entry.path.startsWith("/api/v4/network") && entry.idempotencyKey,
   );
-  expect(networkRequests).toHaveLength(0);
+  expect(body.requests.map((entry) => entry.path)).toContain("/api/v4/network/events");
+  expect(networkMutationRequests).toHaveLength(0);
 });
 
 test("fixture 请求日志会脱敏网络 secret 字段", async ({ request }) => {
   const sentinel = "sentinel-psk-never-log";
-  await request.post("/api/v4/network", {
+  await request.post("/api/v4/network/apply", {
     data: {
-      schema: "ylx.network-apply.v1",
-      mode: "wifi-client",
-      ssid: "Lab WiFi",
-      psk: sentinel,
+      schema: "ylx.network-apply-request.v1",
+      desired: {
+        mode: "wifi-client",
+        wifi_client: {
+          ssid: "Lab WiFi",
+          credential_ref: "opaque:lab-wifi",
+        },
+        ethernet: null,
+      },
       nested: { password: sentinel, token: sentinel, secret: sentinel },
     },
     headers: { "Idempotency-Key": "fixture-redaction" },

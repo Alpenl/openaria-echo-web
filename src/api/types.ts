@@ -279,16 +279,68 @@ export interface UnsuccessfulOutcome {
   [key: string]: unknown;
 }
 
+export type NetworkMode = "hotspot" | "wifi-client" | "ethernet-dhcp" | "ethernet-static";
+
+export interface NetworkDesiredState {
+  mode: NetworkMode;
+  wifi_client: {
+    ssid?: string;
+    credential_state?: string;
+    credential_ref?: string;
+  } | null;
+  ethernet: Record<string, unknown> | null;
+}
+
+export interface NetworkTransaction {
+  transaction_id: string;
+  operation: string;
+  state: string;
+  requested_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error?: { code?: string; message?: string; [key: string]: unknown } | null;
+  [key: string]: unknown;
+}
+
 export interface NetworkStatus {
-  format: "ylx.network-status.v0";
-  capabilities: {
-    modes: string[];
-    wifi_interface: string;
-    ethernet_interface: string;
-    second_wifi: boolean;
+  schema: "ylx.network-status.v1";
+  observed_at: string;
+  desired: NetworkDesiredState;
+  observed: {
+    ap: NetworkInterfaceStatus;
+    wifi_client: NetworkInterfaceStatus;
+    wired: NetworkInterfaceStatus;
+    default_route: string;
+    mdns: { hostname: string; service: string; aliases: string[]; port: number } | null;
+    devices: Array<{ interface: string; type: string; state: string }>;
   };
-  mdns: { hostname: string; service: string; aliases: string[]; port: number };
-  devices: Array<{ interface: string; type: string; state: string }>;
+  transaction: {
+    current: NetworkTransaction | null;
+    latest: NetworkTransaction | null;
+  };
+  mutation_capability: {
+    enabled: boolean;
+    operations: string[];
+    idempotency_key_required: boolean;
+    secret_handling: string;
+    active_state_policy: string;
+  };
+  concurrency_capability: {
+    rescue_ap_required: boolean;
+    same_phy_ap_sta: "unverified" | "driver_advertised" | "unsupported" | string;
+    exclusive_client_failure_timeout_seconds: number;
+    max_managed_interfaces: number;
+    max_ap_interfaces: number;
+  };
+}
+
+export interface NetworkEvent {
+  schema: "ylx.network-event.v1";
+  type: "snapshot" | string;
+  sse_delivery_id: string;
+  occurred_at: string;
+  transaction_id: string | null;
+  data: NetworkStatus;
 }
 
 export type CaptureStateEventState =

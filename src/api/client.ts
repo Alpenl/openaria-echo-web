@@ -18,8 +18,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "d8a440b45911a48fc964ff431a101503283969c1eea41858c267effd1be50e99",
-      bytes: 79250,
+      sha256: "3d419ab5b86ac48306db92cd08a0806c2dc8168b12d4e8d4e643bfa24b7e8e84",
+      bytes: 103455,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -90,6 +90,22 @@ function assertCaptureStatus<T extends CaptureStatus | null>(capture: T): T {
     );
   }
   return capture;
+}
+
+function assertNetworkStatus<T extends NetworkStatus | null>(network: T): T {
+  if (network && network.schema !== "ylx.network-status.v1") {
+    const envelope = network as NetworkStatus & { format?: string };
+    throw new DeviceApiError(
+      "不支持的 Device API network status schema",
+      502,
+      "unsupported_device_api_schema",
+      {
+        schema: envelope.schema ?? null,
+        format: envelope.format ?? null,
+      },
+    );
+  }
+  return network;
 }
 
 export async function makeApiError(response: Response): Promise<DeviceApiError> {
@@ -233,7 +249,7 @@ export const deviceApi = Object.freeze({
   getSafeSwap: () =>
     requestOptionalJson<{ schema: string; receipt: unknown }>("/capture/safe-swap"),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),
-  getNetwork: () => requestOptionalJson<NetworkStatus>("/network"),
+  getNetwork: () => requestOptionalJson<NetworkStatus>("/network").then(assertNetworkStatus),
 
   listSessions: ({ limit = 25, cursor = null }: ListSessionsQuery = {}) => {
     const query = new URLSearchParams({ limit: String(limit) });
