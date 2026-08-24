@@ -205,6 +205,9 @@ test("相机断开不影响控制面并在热插拔后自动恢复", async ({ pa
   await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
   const devicePanel = await openPanel(page, "设备与链路");
   await expect(devicePanel.getByTestId("camera-connection")).toHaveText("未接入");
+  const deviceFact = devicePanel.locator(".facts dd").first();
+  await expect(deviceFact).toHaveCSS("word-break", "normal");
+  await expect(deviceFact).toHaveCSS("overflow-wrap", "anywhere");
   await page.screenshot({
     path: testInfo.outputPath("camera-disconnected.png"),
     animations: "disabled",
