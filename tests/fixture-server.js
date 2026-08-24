@@ -764,6 +764,8 @@ function acceptFixtureNetworkTransaction(operation, desired) {
     ...fixture.networkStatus,
     source_revision: sourceRevision,
     observed_at: "2026-08-23T10:31:00Z",
+    saved: desired.mode === "wifi-client",
+    verified: false,
     desired,
     transaction: { current: transaction, latest: fixture.networkStatus.transaction.latest },
   };
@@ -1340,11 +1342,13 @@ const server = createServer(async (request, response) => {
           ? structuredClone(transaction.desired)
           : fixture.networkStatus.desired,
       saved:
-        status === "committed" && transaction.desired.mode === "wifi-client"
-          ? true
+        status === "committed"
+          ? transaction.desired.mode === "wifi-client"
           : fixture.networkStatus.saved,
       verified:
-        status === "committed" ? true : fixture.networkStatus.verified,
+        status === "committed"
+          ? transaction.desired.mode === "wifi-client"
+          : fixture.networkStatus.verified,
       transaction: {
         current: null,
         latest: transaction,
