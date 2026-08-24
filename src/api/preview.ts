@@ -1,10 +1,10 @@
 import { DeviceApiError, getLatestPreview, waitForAbortableDelay } from "./client";
 
-export type PreviewState = "waiting" | "live" | "unavailable";
+export type PreviewState = "waiting" | "live" | "unavailable" | "disconnected";
 
 export interface FollowLatestPreviewOptions {
   signal: AbortSignal;
-  onFrame: (objectUrl: string) => void;
+  onFrame: (objectUrl: string | null) => void;
   onState: (state: PreviewState) => void;
 }
 
@@ -14,6 +14,13 @@ export interface FollowLatestPreviewOptions {
  */
 export async function followLatestPreview(options: FollowLatestPreviewOptions): Promise<void> {
   let currentUrl: string | null = null;
+  const clearFrame = () => {
+    if (currentUrl) {
+      URL.revokeObjectURL(currentUrl);
+      currentUrl = null;
+    }
+    options.onFrame(null);
+  };
   try {
     while (!options.signal.aborted) {
       try {
@@ -35,16 +42,23 @@ export async function followLatestPreview(options: FollowLatestPreviewOptions): 
           error instanceof DeviceApiError &&
           error.status === 503 &&
           error.code === "preview_unavailable";
-        options.onState("unavailable");
-        if (!expectedIdle) {
+        const cameraDisconnected =
+          error instanceof DeviceApiError &&
+          error.status === 503 &&
+          error.code === "camera_not_connected";
+        if (cameraDisconnected) {
+          clearFrame();
+          options.onState("disconnected");
+        } else {
+          options.onState("unavailable");
+        }
+        if (!expectedIdle && !cameraDisconnected) {
           console.warn(error);
         }
         await waitForAbortableDelay(500, options.signal);
       }
     }
   } finally {
-    if (currentUrl) {
-      URL.revokeObjectURL(currentUrl);
-    }
+    clearFrame();
   }
 }

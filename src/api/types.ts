@@ -51,6 +51,11 @@ export interface CameraFocusStatus {
   auto_enabled: boolean | null;
 }
 
+export interface CameraConnectionStatus {
+  schema: "ylx.camera-connection.v1";
+  state: "connected" | "disconnected";
+}
+
 export interface DeviceRuntime {
   observed_at: string;
   connection_method: string;
@@ -62,6 +67,7 @@ export interface DeviceRuntime {
     default_route: string;
   };
   live_imu: LiveImu | null;
+  camera: CameraConnectionStatus;
   camera_focus: CameraFocusStatus | null;
 }
 

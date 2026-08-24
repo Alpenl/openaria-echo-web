@@ -193,6 +193,36 @@ test("权威快照呈现设备、容量和真实 raw IMU", async ({ page }) => {
   await expect(page.getByTestId("imu-sync")).toHaveText("good");
 });
 
+test("相机断开不影响控制面并在热插拔后自动恢复", async ({ page, request }, testInfo) => {
+  await request.post("/__fixture/config", { data: { cameraConnected: false } });
+
+  await page.goto("/");
+
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  await expect(page.getByText("相机未接入", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("preview-image")).toBeHidden();
+  await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
+  const devicePanel = await openPanel(page, "设备与链路");
+  await expect(devicePanel.getByTestId("camera-connection")).toHaveText("未接入");
+  await page.screenshot({
+    path: testInfo.outputPath("camera-disconnected.png"),
+    animations: "disabled",
+  });
+
+  await request.post("/__fixture/config", { data: { cameraConnected: true } });
+
+  await expect(page.getByTestId("preview-image")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole("button", { name: "开始录制" })).toBeEnabled();
+  await expect(devicePanel.getByTestId("camera-connection")).toHaveText("已连接");
+
+  await request.post("/__fixture/config", { data: { cameraConnected: false } });
+
+  await expect(page.getByText("相机未接入", { exact: true })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId("preview-image")).toBeHidden();
+  await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
+});
+
 test("未知 Device API major 失败关闭且不回退 v3 raw", async ({ page, request }) => {
   /** @type {string[]} */
   const pageApiPaths = [];

@@ -18,11 +18,13 @@ function focusStatusText(focus: CameraFocusStatus): string {
 }
 
 function FocusControl({ state }: { state: AppState }) {
-  const focus = state.capture?.snapshot.runtime.camera_focus ?? state.device?.runtime.camera_focus;
+  const runtime = state.capture?.snapshot.runtime ?? state.device?.runtime ?? null;
+  const focus = runtime?.camera_focus;
   const [draft, setDraft] = useState<number | null>(null);
 
   // 能力不存在就不渲染控件，只留一行事实——不做一个永远点不动的表单。
-  if (!focus) {
+  if (runtime?.camera.state !== "connected" || !focus) {
+    const cameraDisconnected = runtime?.camera.state === "disconnected";
     return (
       <section class="detail-section">
         <span class="eyebrow">OPTICS</span>
@@ -35,7 +37,9 @@ function FocusControl({ state }: { state: AppState }) {
           </div>
         </dl>
         <p id="focus-status" class="panel-note">
-          当前相机未暴露 V4L2 focus_absolute/focus_auto 控制
+          {cameraDisconnected
+            ? "相机未接入"
+            : "当前相机未暴露 V4L2 focus_absolute/focus_auto 控制"}
         </p>
       </section>
     );
@@ -166,6 +170,19 @@ export function DevicePanel({ state }: { state: AppState }) {
             <div>
               <dt>连接方式</dt>
               <dd>{connectionMethodLabel(runtime?.connection_method)}</dd>
+            </div>
+            <div>
+              <dt>相机</dt>
+              <dd
+                data-testid="camera-connection"
+                data-tone={runtime?.camera.state === "disconnected" ? "caution" : undefined}
+              >
+                {runtime
+                  ? runtime.camera.state === "connected"
+                    ? "已连接"
+                    : "未接入"
+                  : "--"}
+              </dd>
             </div>
             <div>
               <dt>观测于</dt>
