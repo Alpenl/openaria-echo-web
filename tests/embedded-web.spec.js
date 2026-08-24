@@ -759,6 +759,49 @@ test("开放 Wi-Fi 应用不创建凭证引用", async ({ page, request }) => {
   expect(body.requests.filter((entry) => entry.path === "/api/v4/network/apply")).toHaveLength(1);
 });
 
+test("设备热点可从 Web 确认切换且不创建 Wi-Fi 凭证", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { networkMutation: true } });
+  await request.post("/__fixture/network-transaction-event", {
+    data: { status: "committed", stage: "committed" },
+  });
+  await page.goto("/");
+  const panel = await openPanel(page, "设备与链路");
+
+  const hotspotTrigger = panel.getByRole("button", { name: "切换到设备热点" });
+  await hotspotTrigger.click();
+  const dialog = panel.getByRole("alertdialog", { name: "切换到设备热点" });
+  await expect(dialog).toBeVisible();
+  const cancel = dialog.getByRole("button", { name: "取消" });
+  await expect(cancel).toBeFocused();
+  await cancel.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(hotspotTrigger).toBeFocused();
+
+  await hotspotTrigger.click();
+  await expect(cancel).toBeFocused();
+  await dialog.getByRole("button", { name: "确认切换" }).click();
+  await expect(panel.getByRole("button", { name: "正在切换热点" })).toBeFocused();
+  await expect(page.getByTestId("network-transaction")).toContainText("apply / accepted");
+
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  expect(
+    body.requests.filter((entry) => entry.path === "/api/v4/network/credentials"),
+  ).toHaveLength(0);
+  const applyRequest = body.requests.find((entry) => entry.path === "/api/v4/network/apply");
+  expect(applyRequest?.idempotencyKey).toBeTruthy();
+  expect(applyRequest?.body).toEqual({
+    schema: "ylx.network-apply-request.v1",
+    desired: { mode: "hotspot", wifi_client: null, ethernet: null },
+  });
+
+  await request.post("/__fixture/network-transaction-event", {
+    data: { status: "committed", stage: "committed" },
+  });
+  await expect(page.locator("#network-status")).toHaveText("设备热点已启用并验证");
+  await expect(panel.getByRole("button", { name: "设备热点已启用" })).toBeDisabled();
+});
+
 test("320、360 和手机横屏下网络确认流程无水平溢出", async ({ page, request }, testInfo) => {
   const viewports = [
     { name: "320-portrait", width: 320, height: 568 },
@@ -766,6 +809,9 @@ test("320、360 和手机横屏下网络确认流程无水平溢出", async ({ p
     { name: "phone-landscape", width: 667, height: 375 },
   ];
   await request.post("/__fixture/config", { data: { networkMutation: true } });
+  await request.post("/__fixture/network-transaction-event", {
+    data: { status: "committed", stage: "committed" },
+  });
 
   for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
@@ -783,6 +829,17 @@ test("320、360 和手机横屏下网络确认流程无水平溢出", async ({ p
     await expectNoHorizontalOverflow(page, viewport.name);
     await page.screenshot({
       path: testInfo.outputPath(`network-${viewport.name}.png`),
+      animations: "disabled",
+    });
+
+    await dialog.getByRole("button", { name: "取消" }).click();
+    await panel.getByRole("button", { name: "切换到设备热点" }).click();
+    const hotspotDialog = panel.getByRole("alertdialog", { name: "切换到设备热点" });
+    await expect(hotspotDialog).toBeVisible();
+    await expect(hotspotDialog.getByRole("button", { name: "取消" })).toBeFocused();
+    await expectNoHorizontalOverflow(page, `${viewport.name}-hotspot`);
+    await page.screenshot({
+      path: testInfo.outputPath(`network-hotspot-${viewport.name}.png`),
       animations: "disabled",
     });
   }

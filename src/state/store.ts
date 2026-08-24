@@ -622,6 +622,24 @@ export class EchoStore {
     }
   };
 
+  applyHotspot = async (): Promise<void> => {
+    if (this.networkMutationBlocked()) {
+      return;
+    }
+    this.dispatch({ type: "network.command.pending", operation: "apply" });
+    try {
+      const desired: NetworkApplyDesiredState = {
+        mode: "hotspot",
+        wifi_client: null,
+        ethernet: null,
+      };
+      const receipt = await deviceApi.applyNetwork(desired);
+      this.acceptNetworkReceipt("apply", receipt);
+    } catch (error) {
+      this.rejectNetworkCommand("apply", error, true);
+    }
+  };
+
   retryNetwork = async (transactionId: string): Promise<void> => {
     if (this.networkMutationBlocked()) {
       return;

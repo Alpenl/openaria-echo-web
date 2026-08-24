@@ -1335,14 +1335,16 @@ const server = createServer(async (request, response) => {
       ...fixture.networkStatus,
       source_revision: sourceRevision,
       observed_at: transaction.updated_at,
+      desired:
+        status === "committed"
+          ? structuredClone(transaction.desired)
+          : fixture.networkStatus.desired,
       saved:
         status === "committed" && transaction.desired.mode === "wifi-client"
           ? true
           : fixture.networkStatus.saved,
       verified:
-        status === "committed" && transaction.desired.mode === "wifi-client"
-          ? true
-          : fixture.networkStatus.verified,
+        status === "committed" ? true : fixture.networkStatus.verified,
       transaction: {
         current: null,
         latest: transaction,
@@ -1651,41 +1653,54 @@ const server = createServer(async (request, response) => {
     let receipt;
     if (url.pathname.endsWith("/apply")) {
       const desired = body.desired;
-      const wifi = desired?.wifi_client;
-      const security = wifi?.security;
-      const credentialRef = wifi?.credential_ref;
-      const protectedNetwork = security !== "open";
-      const validCredential =
-        typeof credentialRef === "string" && fixture.networkCredentialRefs.has(credentialRef);
       if (
-        body.schema !== "ylx.network-apply-request.v1" ||
-        desired?.mode !== "wifi-client" ||
-        desired?.ethernet !== null ||
-        typeof wifi?.ssid !== "string" ||
-        !["open", "wpa2-personal", "wpa3-personal", "wpa2-wpa3-personal"].includes(security) ||
-        (protectedNetwork && !validCredential) ||
-        (!protectedNetwork && credentialRef !== undefined)
+        body.schema === "ylx.network-apply-request.v1" &&
+        desired?.mode === "hotspot" &&
+        desired?.wifi_client === null &&
+        desired?.ethernet === null
       ) {
-        networkProblem(
-          response,
-          422,
-          "invalid_network_desired_state",
-          "网络目标状态不符合 v4 契约",
-        );
-        return;
+        receipt = acceptFixtureNetworkTransaction("apply", {
+          mode: "hotspot",
+          wifi_client: null,
+          ethernet: null,
+        });
+      } else {
+        const wifi = desired?.wifi_client;
+        const security = wifi?.security;
+        const credentialRef = wifi?.credential_ref;
+        const protectedNetwork = security !== "open";
+        const validCredential =
+          typeof credentialRef === "string" && fixture.networkCredentialRefs.has(credentialRef);
+        if (
+          body.schema !== "ylx.network-apply-request.v1" ||
+          desired?.mode !== "wifi-client" ||
+          desired?.ethernet !== null ||
+          typeof wifi?.ssid !== "string" ||
+          !["open", "wpa2-personal", "wpa3-personal", "wpa2-wpa3-personal"].includes(security) ||
+          (protectedNetwork && !validCredential) ||
+          (!protectedNetwork && credentialRef !== undefined)
+        ) {
+          networkProblem(
+            response,
+            422,
+            "invalid_network_desired_state",
+            "网络目标状态不符合 v4 契约",
+          );
+          return;
+        }
+        if (validCredential) {
+          fixture.networkCredentialRefs.delete(credentialRef);
+        }
+        receipt = acceptFixtureNetworkTransaction("apply", {
+          mode: "wifi-client",
+          wifi_client: {
+            ssid: wifi.ssid,
+            security,
+            credential_state: protectedNetwork ? "stored" : "absent",
+          },
+          ethernet: null,
+        });
       }
-      if (validCredential) {
-        fixture.networkCredentialRefs.delete(credentialRef);
-      }
-      receipt = acceptFixtureNetworkTransaction("apply", {
-        mode: "wifi-client",
-        wifi_client: {
-          ssid: wifi.ssid,
-          security,
-          credential_state: protectedNetwork ? "stored" : "absent",
-        },
-        ethernet: null,
-      });
     } else if (url.pathname.endsWith("/retry")) {
       const retained =
         fixture.networkStatus.transaction.latest ?? fixture.networkStatus.transaction.current;

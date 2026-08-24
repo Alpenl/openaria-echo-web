@@ -53,7 +53,15 @@ function statusText(state: AppState): string {
     return "网络状态不可用";
   }
   if (capability.enabled) {
-    return state.networkStatus?.verified ? "已保存并验证当前 Wi-Fi" : "网络变更可用";
+    if (!state.networkStatus?.verified) {
+      return "网络变更可用";
+    }
+    if (state.networkStatus.desired.mode === "hotspot") {
+      return "设备热点已启用并验证";
+    }
+    return state.networkStatus.desired.mode === "wifi-client"
+      ? "已保存并验证当前 Wi-Fi"
+      : "当前网络配置已验证";
   }
   return DISABLED_REASON_LABELS[capability.disabled_reason ?? "not_enabled"] ?? "网络变更不可用";
 }
@@ -142,8 +150,12 @@ function NetworkProvisioning({ state }: { state: AppState }) {
   const [manualSecurity, setManualSecurity] =
     useState<NetworkWifiSecurity>("wpa2-personal");
   const [passphrase, setPassphrase] = useState("");
-  const [confirmation, setConfirmation] = useState<"apply" | "forget" | null>(null);
+  const [confirmation, setConfirmation] = useState<"apply" | "hotspot" | "forget" | null>(null);
+  const [submittedApplyMode, setSubmittedApplyMode] = useState<
+    "wifi-client" | "hotspot" | null
+  >(null);
   const applyTriggerRef = useRef<HTMLButtonElement>(null);
+  const hotspotTriggerRef = useRef<HTMLButtonElement>(null);
   const forgetTriggerRef = useRef<HTMLButtonElement>(null);
   const confirmationCancelRef = useRef<HTMLButtonElement>(null);
   const confirmationTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -182,8 +194,12 @@ function NetworkProvisioning({ state }: { state: AppState }) {
   const passphraseBytes = utf8Length(passphrase);
   const passphraseValid = !requiresPassphrase || (passphraseBytes >= 8 && passphraseBytes <= 63);
   const canApply = canMutate && ssidValid && passphraseValid;
-  const applyTriggerFocusable =
-    canApply || (commandBusy && state.networkCommand.operation === "apply");
+  const applying = commandBusy && state.networkCommand.operation === "apply";
+  const applyingWifi = applying && submittedApplyMode !== "hotspot";
+  const applyingHotspot = applying && submittedApplyMode === "hotspot";
+  const applyTriggerFocusable = canApply || applyingWifi;
+  const canSwitchHotspot = canMutate && state.networkStatus?.desired.mode !== "hotspot";
+  const hotspotTriggerFocusable = canSwitchHotspot || applyingHotspot;
   const forgetting = commandBusy && state.networkCommand.operation === "forget";
   const forgetTriggerFocusable = canMutate || forgetting;
   const showForgetAction = state.networkStatus?.saved === true || forgetting;
@@ -199,14 +215,24 @@ function NetworkProvisioning({ state }: { state: AppState }) {
     }
     const submittedPassphrase = requiresPassphrase ? passphrase : undefined;
     setPassphrase("");
+    setSubmittedApplyMode("wifi-client");
     setConfirmation(null);
     void store.applyWifiNetwork({ ssid, security, passphrase: submittedPassphrase });
+  };
+
+  const applyHotspot = () => {
+    if (!canSwitchHotspot) {
+      return;
+    }
+    setSubmittedApplyMode("hotspot");
+    setConfirmation(null);
+    void store.applyHotspot();
   };
 
   return (
     <section class="network-provisioning" aria-labelledby="network-provisioning-title">
       <div class="network-section-head">
-        <h3 id="network-provisioning-title">Wi-Fi 配置</h3>
+        <h3 id="network-provisioning-title">网络配置</h3>
         <button
           type="button"
           class="icon-button compact"
@@ -351,6 +377,25 @@ function NetworkProvisioning({ state }: { state: AppState }) {
       ) : null}
 
       <div class="network-actions">
+        <button
+          ref={hotspotTriggerRef}
+          type="button"
+          class="panel-secondary"
+          disabled={!hotspotTriggerFocusable}
+          aria-disabled={!canSwitchHotspot}
+          onClick={() => {
+            if (canSwitchHotspot) {
+              confirmationTriggerRef.current = hotspotTriggerRef.current;
+              setConfirmation("hotspot");
+            }
+          }}
+        >
+          {applyingHotspot
+            ? "正在切换热点"
+            : state.networkStatus?.desired.mode === "hotspot"
+              ? "设备热点已启用"
+              : "切换到设备热点"}
+        </button>
         {retryable ? (
           <button
             type="button"
@@ -379,6 +424,37 @@ function NetworkProvisioning({ state }: { state: AppState }) {
           </button>
         ) : null}
       </div>
+
+      {confirmation === "hotspot" ? (
+        <div
+          class="network-confirm"
+          role="alertdialog"
+          aria-labelledby="network-hotspot-title"
+          aria-describedby="network-hotspot-description"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setConfirmation(null);
+            }
+          }}
+        >
+          <strong id="network-hotspot-title">切换到设备热点</strong>
+          <p id="network-hotspot-description">当前管理连接可能中断。</p>
+          <div class="network-confirm-actions">
+            <button type="button" class="panel-command" onClick={applyHotspot}>
+              确认切换
+            </button>
+            <button
+              ref={confirmationCancelRef}
+              type="button"
+              class="panel-secondary"
+              onClick={() => setConfirmation(null)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {confirmation === "forget" ? (
         <div
