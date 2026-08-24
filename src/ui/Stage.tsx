@@ -15,6 +15,7 @@ const PREVIEW_MESSAGES: Record<PreviewState, string> = {
   live: "实时",
   waiting: "等待设备画面",
   unavailable: "画面暂不可用",
+  disconnected: "相机未接入",
 };
 
 /**
@@ -32,20 +33,30 @@ export function Stage({
   previewState: PreviewState;
 }) {
   const previewSupported = state.device?.capabilities.preview !== false;
+  const runtime = state.capture?.snapshot.runtime ?? state.device?.runtime ?? null;
+  const cameraDisconnected =
+    runtime?.camera.state === "disconnected" || previewState === "disconnected";
+  const showFrame = Boolean(frameUrl) && !cameraDisconnected;
 
   return (
     <div class="frame" data-inspect={state.inspect} data-full={String(state.fullFrame)}>
       <img
         data-testid="preview-image"
-        src={frameUrl ?? undefined}
+        src={showFrame ? (frameUrl ?? undefined) : undefined}
         alt="设备实时预览"
-        hidden={!frameUrl}
+        hidden={!showFrame}
       />
-      <FocusPeakingOverlay state={state} frameUrl={frameUrl} />
-      {!frameUrl ? (
+      <FocusPeakingOverlay state={state} frameUrl={showFrame ? frameUrl : null} />
+      {!showFrame ? (
         <p class="frame-empty">
           <span class="eyebrow">PREVIEW</span>
-          <span>{previewSupported ? PREVIEW_MESSAGES[previewState] : "本机不提供预览"}</span>
+          <span>
+            {cameraDisconnected
+              ? "相机未接入"
+              : previewSupported
+                ? PREVIEW_MESSAGES[previewState]
+                : "本机不提供预览"}
+          </span>
         </p>
       ) : null}
     </div>

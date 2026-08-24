@@ -69,6 +69,8 @@ export function CommandBar({ state }: { state: AppState }) {
     connected && recording,
   );
   const captureAllowed = state.device?.capabilities.capture !== false;
+  const cameraConnected =
+    (snapshot?.runtime.camera ?? state.device?.runtime.camera)?.state === "connected";
 
   // 名称由原生 required 校验，快门只按权威状态和链路启停：事件流断开即封锁命令。
   // 卷不可写就不准入：录制准入在创建 session 之前判断，不靠事后失败收敛。
@@ -76,6 +78,7 @@ export function CommandBar({ state }: { state: AppState }) {
   const canStart =
     Boolean(snapshot) &&
     connected &&
+    cameraConnected &&
     captureAllowed &&
     writable &&
     deviceState === "idle" &&
@@ -132,7 +135,9 @@ export function CommandBar({ state }: { state: AppState }) {
               placeholder="例如：走廊采集 01"
               required
               value={displayName}
-              disabled={!connected || state.commandPending || deviceState !== "idle"}
+              disabled={
+                !connected || !cameraConnected || state.commandPending || deviceState !== "idle"
+              }
               onInput={(event) => setDisplayName((event.currentTarget as HTMLInputElement).value)}
             />
             {!connected ? (
@@ -141,6 +146,8 @@ export function CommandBar({ state }: { state: AppState }) {
                   ? "等待权威事件，命令已封锁"
                   : "事件流断开，命令已封锁"}
               </p>
+            ) : !cameraConnected ? (
+              <p class="command-lock">相机未接入，录制已锁定</p>
             ) : null}
           </>
         )}

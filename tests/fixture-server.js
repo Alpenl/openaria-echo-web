@@ -72,6 +72,7 @@ const previewJpeg = Buffer.from(
  * @property {boolean} eventsUnavailable
  * @property {boolean} sessionsVolumeUnavailable
  * @property {boolean} networkUnavailable
+ * @property {boolean} cameraConnected
  * @property {Set<string>} networkCredentialRefs
  * @property {number} nextNetworkCredential
  * @property {number} sessionsDelayMs
@@ -242,6 +243,10 @@ const makeRuntime = () => ({
     },
     sync: { quality: "good" },
   },
+  camera: {
+    schema: "ylx.camera-connection.v1",
+    state: "connected",
+  },
   camera_focus: makeCameraFocusStatus(),
 });
 
@@ -353,6 +358,7 @@ function makeFixture() {
     eventsUnavailable: false,
     sessionsVolumeUnavailable: false,
     networkUnavailable: false,
+    cameraConnected: true,
     networkCredentialRefs: new Set(),
     nextNetworkCredential: 1,
     sessionsDelayMs: 0,
@@ -1119,7 +1125,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/__fixture/config" && request.method === "POST") {
-    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
+    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, cameraConnected?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
       await readJson(request)
     );
     if (typeof config.apiVersion === "string") {
@@ -1160,6 +1166,30 @@ const server = createServer(async (request, response) => {
     }
     if (typeof config.networkUnavailable === "boolean") {
       fixture.networkUnavailable = config.networkUnavailable;
+    }
+    if (typeof config.cameraConnected === "boolean") {
+      fixture.cameraConnected = config.cameraConnected;
+      const camera = {
+        schema: "ylx.camera-connection.v1",
+        state: config.cameraConnected ? "connected" : "disconnected",
+      };
+      fixture.device.runtime = {
+        ...fixture.device.runtime,
+        camera,
+        camera_focus: config.cameraConnected ? makeCameraFocusStatus() : null,
+      };
+      fixture.snapshot = {
+        ...fixture.snapshot,
+        source_revision: fixture.snapshot.source_revision + 1,
+        snapshot: {
+          ...fixture.snapshot.snapshot,
+          runtime: {
+            ...fixture.snapshot.snapshot.runtime,
+            camera,
+            camera_focus: config.cameraConnected ? makeCameraFocusStatus() : null,
+          },
+        },
+      };
     }
     if (typeof config.sessionsVolumeUnavailable === "boolean") {
       fixture.sessionsVolumeUnavailable = config.sessionsVolumeUnavailable;
@@ -1704,6 +1734,27 @@ const server = createServer(async (request, response) => {
       fixture.previewActive.size,
     );
     await new Promise((resolveDelay) => setTimeout(resolveDelay, fixture.previewDelayMs));
+    if (!fixture.cameraConnected) {
+      fixture.previewActive.delete(requestId);
+      fixture.previewTimeline.push({ requestId, phase: "end", at: performance.now() });
+      const payload = JSON.stringify({
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "camera_not_connected",
+          message: "相机未接入",
+          request_id: "52c5780a-bbc4-4cd0-992c-1c7621b636aa",
+          retryable: true,
+        },
+      });
+      response.writeHead(503, {
+        "Cache-Control": "no-store",
+        "Content-Length": Buffer.byteLength(payload),
+        "Content-Type": "application/problem+json",
+        "YLX-Error-Code": "camera_not_connected",
+      });
+      response.end(payload);
+      return;
+    }
     response.writeHead(200, {
       "Cache-Control": "no-store",
       "Content-Length": previewJpeg.length,
@@ -1720,6 +1771,18 @@ const server = createServer(async (request, response) => {
     const body = /** @type {{schema?: string, mode?: string, take?: {kind?: string}, display_name?: string}} */ (
       await readJson(request)
     );
+    if (!fixture.cameraConnected) {
+      sendJson(response, 503, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "camera_not_connected",
+          message: "相机未接入",
+          request_id: "da0d92b1-8c15-4cf9-ad70-81aa1d40e7c1",
+          retryable: true,
+        },
+      });
+      return;
+    }
     if (
       !request.headers["idempotency-key"] ||
       body.schema !== "ylx.capture-start.v2" ||

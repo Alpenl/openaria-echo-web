@@ -29,8 +29,8 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "75f380e09a17972f65b6e64848be9754e7b730f88aa53bd7f3899f4b24e4da63",
-    bytes: 115169,
+    sha256: "796bf198d8dce26872cbe1c832706eacfe105d1e7713712fc7aead3570dcd428",
+    bytes: 117484,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",
@@ -356,6 +356,10 @@ function captureStatus(sourceRevision, deviceState) {
           default_route: "none",
         },
         live_imu: null,
+        camera: {
+          schema: "ylx.camera-connection.v1",
+          state: "connected",
+        },
         camera_focus: null,
       },
     },
