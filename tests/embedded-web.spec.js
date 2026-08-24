@@ -800,6 +800,11 @@ test("设备热点可从 Web 确认切换且不创建 Wi-Fi 凭证", async ({ pa
   });
   await expect(page.locator("#network-status")).toHaveText("设备热点已启用并验证");
   await expect(panel.getByRole("button", { name: "设备热点已启用" })).toBeDisabled();
+
+  await page.reload();
+  const reloadedPanel = await openPanel(page, "设备与链路");
+  await expect(page.locator("#network-status")).toHaveText("设备热点已启用并验证");
+  await expect(reloadedPanel.getByRole("button", { name: "设备热点已启用" })).toBeDisabled();
 });
 
 test("320、360 和手机横屏下网络确认流程无水平溢出", async ({ page, request }, testInfo) => {

@@ -53,11 +53,18 @@ function statusText(state: AppState): string {
     return "网络状态不可用";
   }
   if (capability.enabled) {
+    const transaction =
+      state.networkStatus?.transaction.current ?? state.networkStatus?.transaction.latest;
+    const hotspotValidated =
+      state.networkStatus?.desired.mode === "hotspot" &&
+      transaction?.desired.mode === "hotspot" &&
+      transaction.status === "committed" &&
+      transaction.rescue.ap_validated;
+    if (hotspotValidated) {
+      return "设备热点已启用并验证";
+    }
     if (!state.networkStatus?.verified) {
       return "网络变更可用";
-    }
-    if (state.networkStatus.desired.mode === "hotspot") {
-      return "设备热点已启用并验证";
     }
     return state.networkStatus.desired.mode === "wifi-client"
       ? "已保存并验证当前 Wi-Fi"
