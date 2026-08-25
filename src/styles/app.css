@@ -1201,25 +1201,280 @@ a:hover {
   text-wrap: pretty;
 }
 
+.network-view,
+.network-provisioning,
 .network-form,
 .field-stack {
   display: flex;
   flex-direction: column;
+}
+
+.network-current {
+  padding: 16px 14px 15px;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.network-current-topline,
+.network-current-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.network-current-topline span:last-child {
+  color: var(--ink-2);
+}
+
+.network-current > strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.network-current-meta {
+  justify-content: flex-start;
+  margin-top: 3px;
+  font-family: var(--mono);
+}
+
+.network-current-meta span + span::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--ink-3);
+}
+
+#network-status {
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+#network-status[data-tone="caution"] {
+  color: var(--caution);
+}
+
+.network-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
+  min-height: 54px;
+  padding: 8px 14px;
+}
+
+.network-section-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.network-section-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.network-section-head span {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.wifi-network-list {
+  margin: 0 14px;
+  overflow: hidden;
+  border: 1px solid var(--hairline-2);
+  border-radius: 4px;
+  background: #121517;
+}
+
+.wifi-network-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 11px;
+  background: #121517;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink);
+  text-align: left;
+}
+
+.wifi-network-option:last-child {
+  border-bottom: 0;
+}
+
+.wifi-network-option:hover:not(:disabled) {
+  background: #191d20;
+}
+
+.wifi-network-option[aria-pressed="true"] {
+  padding-left: 8px;
+  background: #182329;
+  border-left: 3px solid var(--focus-ring);
+}
+
+.wifi-network-identity {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wifi-network-identity strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wifi-network-identity > span {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.wifi-network-meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+}
+
+.wifi-current-tag {
+  padding: 1px 5px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 2px;
+  color: var(--ink-2);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.wifi-signal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 51px;
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
+.wifi-signal-bars {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  width: 22px;
+  height: 14px;
+}
+
+.wifi-signal-bars i {
+  display: block;
+  width: 4px;
+  background: var(--hairline-2);
+  border-radius: 1px 1px 0 0;
+}
+
+.wifi-signal-bars i:nth-child(1) {
+  height: 4px;
+}
+
+.wifi-signal-bars i:nth-child(2) {
+  height: 7px;
+}
+
+.wifi-signal-bars i:nth-child(3) {
+  height: 10px;
+}
+
+.wifi-signal-bars i:nth-child(4) {
+  height: 14px;
+}
+
+.wifi-signal-bars i[data-active="true"] {
+  background: var(--ink-2);
+}
+
+.wifi-network-manual {
+  justify-content: flex-start;
+  min-height: 46px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.wifi-network-manual > span:first-child {
+  width: 18px;
+  color: var(--ink);
+  font-size: 18px;
+  text-align: center;
+}
+
+.wifi-network-empty {
+  padding: 20px 12px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.network-list-toggle {
+  align-self: flex-start;
+  margin: 7px 14px 0;
+  padding: 4px 0;
+  background: transparent;
+  border: 0;
+  color: var(--link);
+  font-size: 12px;
+}
+
+.network-selection-fields,
+.field-stack {
+  gap: 7px;
+}
+
+.network-selection-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .network-form input[type="text"],
 .network-form input[type="password"],
 .network-form select {
   width: 100%;
-  height: 40px;
+  height: 42px;
   padding: 0 11px;
-  background: var(--sunken);
+  background: #121517;
   color: var(--ink);
   border: 1px solid var(--hairline-2);
   border-radius: 3px;
   font-family: var(--mono);
   font-size: 13px;
+}
+
+/* Native option popups may use a light system surface even under color-scheme: dark. */
+.network-form select option {
+  background: #f0f3f4;
+  color: #151718;
 }
 
 .network-form input:disabled,
@@ -1229,27 +1484,8 @@ a:hover {
 }
 
 .field-stack > span {
-  font-size: 12px;
   color: var(--ink-2);
-}
-
-.network-provisioning {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--hairline);
-}
-
-.network-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.network-section-head h3 {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .icon-button.compact {
@@ -1306,8 +1542,16 @@ a:hover {
 .network-actions,
 .network-confirm-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.network-actions {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin: 12px 14px 14px;
+}
+
+.network-confirm-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .network-actions:empty {
@@ -1318,9 +1562,10 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin: 0 14px 12px;
   padding: 10px 12px;
   border-left: 3px solid var(--caution);
-  background: var(--sunken);
+  background: #121517;
 }
 
 .network-confirm.danger {
@@ -1332,8 +1577,7 @@ a:hover {
   overflow-wrap: anywhere;
 }
 
-.network-confirm p,
-.network-progress {
+.network-confirm p {
   color: var(--ink-2);
   font-size: 12px;
 }
@@ -1341,23 +1585,101 @@ a:hover {
 .network-progress {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px 10px;
+  gap: 8px 12px;
+  margin: 0 14px 14px;
+  padding: 11px 12px;
+  border-left: 3px solid var(--caution);
+  background: #121517;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.network-progress[data-status="failed"],
+.network-progress[data-status="rescued"] {
+  border-left-color: var(--fault);
 }
 
 .network-progress progress {
   grid-column: 1 / -1;
   width: 100%;
   height: 5px;
-  accent-color: var(--live);
+  accent-color: var(--ink-2);
 }
 
+.network-progress > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.network-progress strong,
 .network-progress span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.network-form input[type="range"] {
-  width: 100%;
+.network-progress strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.network-progress-error,
+.network-progress > button {
+  grid-column: 1 / -1;
+}
+
+.network-progress-error {
+  color: var(--fault);
+}
+
+.network-details {
+  border-top: 1px solid var(--hairline);
+}
+
+.network-details summary {
+  padding: 12px 14px;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 12px;
+  list-style-position: inside;
+}
+
+.network-details[open] summary {
+  color: var(--ink-2);
+}
+
+.network-details dl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.network-details dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.network-details dt {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.network-details dd {
+  min-width: 0;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.network-details dd[data-tone="caution"] {
+  color: var(--caution);
 }
 
 .segmented {
@@ -1406,6 +1728,7 @@ a:hover {
 
 /* 危险确认：斜纹底 + 红边，和危险带用同一套编码，不新造第二种警示语汇。 */
 .network-risk {
+  margin: 0 14px 14px;
   padding: 10px 12px;
   background-image: var(--hatch);
   border: 1px solid var(--fault);
