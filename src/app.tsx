@@ -8,6 +8,7 @@ import { CommandBar } from "./ui/CommandBar";
 import { CredentialPrompt } from "./ui/CredentialPrompt";
 import { DevicePanel } from "./ui/DevicePanel";
 import { Alerts, HazardBand, PermitBand } from "./ui/HazardBand";
+import { NetworkPanel } from "./ui/NetworkPanel";
 import { SessionsPanel } from "./ui/SessionsPanel";
 import { Stage, StageOverlays } from "./ui/Stage";
 import { TopBar } from "./ui/TopBar";
@@ -160,6 +161,7 @@ export function App() {
       <CommandBar state={state} />
       {state.panel === "sessions" ? <SessionsPanel state={state} /> : null}
       {state.panel === "device" ? <DevicePanel state={state} /> : null}
+      {state.panel === "network" ? <NetworkPanel state={state} /> : null}
       {state.needsCredentials ? (
         <CredentialPrompt
           onConnected={() => {

@@ -16,7 +16,7 @@ test.beforeEach(async ({ request }) => {
  * 取景器优先的布局把会话台账和设备维护收进边缘面板：录制之外的东西不再挤压首屏。
  * 断言这些内容之前必须先打开对应面板——面板是布局，不是能力门禁。
  * @param {import("@playwright/test").Page} page
- * @param {"会话台账" | "设备与链路"} name
+ * @param {"会话台账" | "设备与链路" | "网络设置"} name
  */
 async function openPanel(page, name) {
   const panel = page.getByRole("complementary", { name });
@@ -370,7 +370,7 @@ test("设备未声明网络变更能力时仍读取只读网络状态和 mDNS", 
 
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.locator(".connection")).toHaveText("已连接");
-  await openPanel(page, "设备与链路");
+  await openPanel(page, "网络设置");
   await expect(page.getByTestId("network-mdns")).toHaveText("rp-ylx.local:8080");
   await expect(page.locator("#network-status")).toHaveText("未启用");
   await expect(page.getByRole("form", { name: "网络设置" })).toHaveCount(0);
@@ -546,7 +546,7 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
 
 test("v4 网络状态和事件在变更禁用时保持只读", async ({ page, request }) => {
   await page.goto("/");
-  await openPanel(page, "设备与链路");
+  await openPanel(page, "网络设置");
 
   await expect(page.getByTestId("network-wifi")).toContainText("未启用");
   await expect(page.getByTestId("network-modes")).toContainText("设备热点");
@@ -621,17 +621,23 @@ test("首次打开网络面板自动扫描一次且重开不重复", async ({ pa
   await page.goto("/");
 
   const deviceTrigger = page.getByRole("button", { name: "设备与链路", exact: true });
+  const connectionMethod = page.getByTestId("connection-method");
+  const networkTrigger = page.getByRole("button", { name: "网络设置", exact: true });
   await expect.poll(() => fixtureRequestCount(request, "/api/v4/network/scan")).toBe(0);
   await deviceTrigger.click();
+  const devicePanel = page.getByRole("complementary", { name: "设备与链路" });
+  await expect(devicePanel.getByTestId("network-default-route")).toHaveCount(0);
+  await devicePanel.getByRole("button", { name: "关闭" }).click();
+  await connectionMethod.click();
 
-  const panel = page.getByRole("complementary", { name: "设备与链路" });
+  const panel = page.getByRole("complementary", { name: "网络设置" });
   const networkSelect = panel.getByLabel("Wi-Fi 网络");
   await expect(networkSelect.locator("option")).toHaveCount(3);
   await expect.poll(() => fixtureRequestCount(request, "/api/v4/network/scan")).toBe(1);
 
   await panel.getByRole("button", { name: "关闭" }).click();
-  await expect(deviceTrigger).toBeFocused();
-  await deviceTrigger.click();
+  await expect(networkTrigger).toBeFocused();
+  await connectionMethod.click();
   await expect(networkSelect.locator("option")).toHaveCount(3);
   await page.waitForTimeout(150);
   expect(await fixtureRequestCount(request, "/api/v4/network/scan")).toBe(1);
@@ -644,7 +650,7 @@ test("受保护 Wi-Fi 通过一次性凭证完成应用、重试和忘记", asyn
   const sentinel = "fixture-passphrase-never-persist";
   await request.post("/__fixture/config", { data: { networkMutation: true } });
   await page.goto("/");
-  await openPanel(page, "设备与链路");
+  await openPanel(page, "网络设置");
 
   await expect(page.locator("#network-status")).toHaveText("网络变更可用");
   const networkSelect = page.getByLabel("Wi-Fi 网络");
@@ -739,7 +745,7 @@ test("受保护 Wi-Fi 通过一次性凭证完成应用、重试和忘记", asyn
 test("开放 Wi-Fi 应用不创建凭证引用", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { networkMutation: true } });
   await page.goto("/");
-  await openPanel(page, "设备与链路");
+  await openPanel(page, "网络设置");
   const networkSelect = page.getByLabel("Wi-Fi 网络");
   await expect(networkSelect.locator("option")).toHaveCount(3);
   await networkSelect.selectOption({ index: 2 });
@@ -765,7 +771,7 @@ test("设备热点可从 Web 确认切换且不创建 Wi-Fi 凭证", async ({ pa
     data: { status: "committed", stage: "committed" },
   });
   await page.goto("/");
-  const panel = await openPanel(page, "设备与链路");
+  const panel = await openPanel(page, "网络设置");
 
   const hotspotTrigger = panel.getByRole("button", { name: "切换到设备热点" });
   await hotspotTrigger.click();
@@ -802,7 +808,7 @@ test("设备热点可从 Web 确认切换且不创建 Wi-Fi 凭证", async ({ pa
   await expect(panel.getByRole("button", { name: "设备热点已启用" })).toBeDisabled();
 
   await page.reload();
-  const reloadedPanel = await openPanel(page, "设备与链路");
+  const reloadedPanel = await openPanel(page, "网络设置");
   await expect(page.locator("#network-status")).toHaveText("设备热点已启用并验证");
   await expect(reloadedPanel.getByRole("button", { name: "设备热点已启用" })).toBeDisabled();
 });
@@ -821,7 +827,7 @@ test("320、360 和手机横屏下网络确认流程无水平溢出", async ({ p
   for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/");
-    const panel = await openPanel(page, "设备与链路");
+    const panel = await openPanel(page, "网络设置");
     const networkSelect = panel.getByLabel("Wi-Fi 网络");
     await expect(networkSelect.locator("option")).toHaveCount(3);
     await networkSelect.selectOption({ index: 1 });
