@@ -14,6 +14,7 @@ export function TopBar({ state }: { state: AppState }) {
   const deviceState = snapshot?.device_state ?? null;
   const storage = state.device?.storage;
   const runtime = snapshot?.runtime ?? state.device?.runtime ?? null;
+  const connectionMethod = connectionMethodLabel(runtime?.connection_method);
   // 介质许可只由通过七项校验的 typed receipt 驱动，绝不从状态或列表推断。
   const released = state.safeSwapReceipt !== null;
 
@@ -39,9 +40,29 @@ export function TopBar({ state }: { state: AppState }) {
           </span>
         </span>
         <span data-testid="temperature">{formatCelsius(runtime?.temperature_celsius)}</span>
-        <span data-testid="connection-method">
-          {connectionMethodLabel(runtime?.connection_method)}
-        </span>
+        <button
+          id="network-panel-trigger"
+          type="button"
+          class="connection-method-trigger"
+          aria-pressed={state.panel === "network"}
+          aria-controls="network-panel"
+          aria-label="网络设置"
+          aria-describedby="connection-method-label"
+          title="网络设置"
+          onClick={() => {
+            const opening = state.panel !== "network";
+            store.dispatch(
+              opening ? { type: "panel.opened", panel: "network" } : { type: "panel.closed" },
+            );
+            if (opening) {
+              void store.refreshNetwork();
+            }
+          }}
+        >
+          <span id="connection-method-label" data-testid="connection-method">
+            {connectionMethod}
+          </span>
+        </button>
         <span
           class="tag"
           data-testid="media-release"
@@ -87,7 +108,7 @@ export function TopBar({ state }: { state: AppState }) {
             opening ? { type: "panel.opened", panel: "device" } : { type: "panel.closed" },
           );
           if (opening) {
-            void store.refreshNetwork();
+            void store.refreshDevice();
           }
         }}
       >

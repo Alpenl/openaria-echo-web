@@ -324,6 +324,32 @@ a:hover {
   white-space: nowrap;
 }
 
+.connection-method-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin: -4px -5px;
+  padding: 3px 5px 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline-2);
+  border-radius: 0;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.connection-method-trigger:hover {
+  color: var(--ink);
+  background: var(--sunken);
+  border-bottom-color: var(--ink-2);
+}
+
+.connection-method-trigger[aria-pressed="true"] {
+  color: var(--link);
+  border-bottom-color: var(--link);
+}
+
 .link-dot {
   display: inline-flex;
   align-items: center;

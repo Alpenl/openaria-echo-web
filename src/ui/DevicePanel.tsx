@@ -4,7 +4,6 @@ import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { connectionMethodLabel, formatBytes, formatCelsius, formatClock } from "./format";
 import { CloseIcon } from "./icons";
-import { NetworkControl } from "./NetworkControl";
 
 function focusStatusText(focus: CameraFocusStatus): string {
   const manual = `手动焦距 ${focus.value}（${focus.minimum}–${focus.maximum}，步进 ${focus.step}）`;
@@ -190,8 +189,6 @@ export function DevicePanel({ state }: { state: AppState }) {
             </div>
           </dl>
         </section>
-
-        <NetworkControl state={state} />
 
         <FocusControl state={state} />
 

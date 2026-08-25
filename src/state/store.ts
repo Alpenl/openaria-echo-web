@@ -106,6 +106,7 @@ export class EchoStore {
   private readonly listeners = new Set<() => void>();
 
   private captureRefresh: Promise<void> | null = null;
+  private deviceRefresh: Promise<void> | null = null;
   private relatedRefresh: Promise<void> | null = null;
   private sessionsRefresh: Promise<void> | null = null;
   private sessionsRefreshDirty = false;
@@ -321,6 +322,10 @@ export class EchoStore {
       return;
     }
     if (this.state.panel === "device") {
+      await this.refreshDevice();
+      return;
+    }
+    if (this.state.panel === "network") {
       await this.refreshNetwork();
     }
   };
@@ -497,14 +502,25 @@ export class EchoStore {
     void refresh;
   }
 
+  refreshDevice = async (): Promise<void> => {
+    if (!this.deviceRefresh) {
+      this.deviceRefresh = deviceApi
+        .getDevice()
+        .then((device) => this.dispatch({ type: "device.loaded", payload: device }))
+        .catch((error) => console.warn(error))
+        .finally(() => {
+          this.deviceRefresh = null;
+        });
+    }
+    await this.deviceRefresh;
+  };
+
   private networkRefresh: Promise<void> | null = null;
 
   refreshNetwork = async (): Promise<void> => {
     if (!this.networkRefresh) {
-      this.networkRefresh = deviceApi
-        .getDevice()
-        .then(async (device) => {
-          this.dispatch({ type: "device.loaded", payload: device });
+      this.networkRefresh = this.refreshDevice()
+        .then(async () => {
           const network = await deviceApi.getNetwork();
           this.dispatch({ type: "network.loaded", payload: network });
         })
