@@ -896,6 +896,30 @@ test("无录制卷时设备保持在线并显示空会话列表", async ({ page,
   await expect(page.getByText("暂无会话", { exact: true })).toBeVisible();
 });
 
+test("录制名称可留空并由设备使用可读真实时间命名", async ({ page, request }) => {
+  await page.goto("/");
+
+  const nameInput = page.getByLabel("录制名称（可选）");
+  await expect(nameInput).toHaveValue("");
+  await expect(nameInput).not.toHaveAttribute("required", "");
+  await page.getByRole("button", { name: "开始录制" }).click();
+
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  const generatedName = await page.getByTestId("current-session-name").innerText();
+  expect(generatedName).toMatch(/^录制 \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  const generatedAt = new Date(generatedName.slice(3).replace(" ", "T")).getTime();
+  expect(Math.abs(Date.now() - generatedAt)).toBeLessThan(10_000);
+
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  const start = body.requests.find((entry) => entry.path === "/api/v4/capture/start");
+  expect(start?.body).toEqual({
+    schema: "ylx.capture-start.v2",
+    mode: "production",
+    take: { kind: "new" },
+  });
+});
+
 test("录制命令在权威快照到达前保持待机", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { commandDelayMs: 350 } });
   await page.goto("/");

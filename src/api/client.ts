@@ -360,16 +360,18 @@ export const deviceApi = Object.freeze({
   artifactUrl: (sessionId: string, artifactId: string) =>
     `${API_ROOT}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`,
 
-  startCapture: (displayName: string, mode: "production" | "calibration" = "production") =>
-    requestJson<CaptureStatus>(
+  startCapture: (displayName?: string, mode: "production" | "calibration" = "production") => {
+    const normalizedDisplayName = displayName?.trim();
+    return requestJson<CaptureStatus>(
       "/capture/start",
       commandInit({
         schema: "ylx.capture-start.v2",
         mode,
-        display_name: displayName,
+        ...(normalizedDisplayName ? { display_name: normalizedDisplayName } : {}),
         take: { kind: "new" },
       }),
-    ).then(assertCaptureStatus),
+    ).then(assertCaptureStatus);
+  },
   stopCapture: (reason: "user" | "safe_swap") =>
     requestJson<CaptureStatus>(
       "/capture/stop",

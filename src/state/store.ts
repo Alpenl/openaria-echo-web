@@ -424,7 +424,7 @@ export class EchoStore {
 
   closeSession = (): void => this.dispatch({ type: "session.closed" });
 
-  startCapture = async (displayName: string): Promise<void> => {
+  startCapture = async (displayName?: string): Promise<void> => {
     if (this.state.commandPending || this.state.connection !== "connected") {
       return;
     }
