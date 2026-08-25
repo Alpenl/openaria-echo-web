@@ -72,7 +72,7 @@ export function CommandBar({ state }: { state: AppState }) {
   const cameraConnected =
     (snapshot?.runtime.camera ?? state.device?.runtime.camera)?.state === "connected";
 
-  // 名称由原生 required 校验，快门只按权威状态和链路启停：事件流断开即封锁命令。
+  // 名称可选；空值由设备按本地真实时间生成。快门只按权威状态和链路启停。
   // 卷不可写就不准入：录制准入在创建 session 之前判断，不靠事后失败收敛。
   const writable = state.device?.storage.writable === true;
   const canStart =
@@ -97,7 +97,7 @@ export function CommandBar({ state }: { state: AppState }) {
               void store.stopCapture("user");
             }
           } else if (canStart) {
-            void store.startCapture(displayName.trim());
+            void store.startCapture(displayName);
           }
         }}
       >
@@ -124,7 +124,7 @@ export function CommandBar({ state }: { state: AppState }) {
         ) : (
           <>
             <label class="eyebrow" for="capture-name">
-              录制名称
+              录制名称（可选）
             </label>
             <input
               id="capture-name"
@@ -133,7 +133,6 @@ export function CommandBar({ state }: { state: AppState }) {
               maxLength={160}
               autocomplete="off"
               placeholder="例如：走廊采集 01"
-              required
               value={displayName}
               disabled={
                 !connected || !cameraConnected || state.commandPending || deviceState !== "idle"

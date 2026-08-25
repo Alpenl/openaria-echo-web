@@ -776,6 +776,14 @@ function acceptFixtureNetworkTransaction(operation, desired) {
   };
 }
 
+/** @param {Date} [now] */
+function defaultRecordingName(now = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `录制 ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
+    now.getHours(),
+  )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 /** @param {string} displayName */
 function setRecording(displayName) {
   fixture.snapshot.source_revision += 1;
@@ -1790,6 +1798,9 @@ const server = createServer(async (request, response) => {
     const body = /** @type {{schema?: string, mode?: string, take?: {kind?: string}, display_name?: string}} */ (
       await readJson(request)
     );
+    if (apiRequest) {
+      apiRequest.body = redactSecrets(body);
+    }
     if (!fixture.cameraConnected) {
       sendJson(response, 503, {
         schema: "ylx.api-error.v2",
@@ -1824,7 +1835,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, fixture.commandDelayMs));
-    setRecording(body.display_name ?? "未命名录制");
+    setRecording(body.display_name ?? defaultRecordingName());
     sendJson(response, 202, fixture.snapshot);
     broadcastSnapshot();
     return;
