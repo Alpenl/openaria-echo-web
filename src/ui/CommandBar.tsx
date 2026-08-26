@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./format";
 import { CalibrationIcon, EjectIcon } from "./icons";
+
+const CALIBRATION_DISABLED_REASON_LABELS: Record<CalibrationCaptureDisabledReason, string> = {
+  raw_side_by_side_required: "当前配置不能生成原始双目布局",
+  native_raw_sink_unavailable: "原始双目写入链路不可用",
+  storage_unavailable: "录制存储不可用",
+  hardware_unavailable: "相机硬件不可用",
+  maintenance_or_capture_busy: "设备正忙",
+};
 
 function useDisplayedElapsedSeconds(
   authoritativeSeconds: number,
@@ -84,6 +93,13 @@ export function CommandBar({ state }: { state: AppState }) {
     deviceState === "idle" &&
     !state.commandPending;
   const canStop = connected && recording && !state.commandPending;
+  const calibrationCapability = state.device?.capabilities.calibration_capture;
+  const canStartCalibration = canStart && calibrationCapability?.enabled === true;
+  const calibrationReason = calibrationCapability?.enabled
+    ? "开始原始双目标定录制"
+    : calibrationCapability
+      ? CALIBRATION_DISABLED_REASON_LABELS[calibrationCapability.disabled_reason!]
+      : "设备未报告标定录制能力";
   const shutterLabel = state.commandPending ? "正在发送" : recording ? "结束录制" : "开始录制";
 
   return (
@@ -196,15 +212,20 @@ export function CommandBar({ state }: { state: AppState }) {
         <button
           type="button"
           class="command-button"
-          disabled
-          title="标定录制路径尚未在 Device API v4 暴露"
-          aria-describedby="calibration-reason"
+          disabled={!canStartCalibration}
+          title={calibrationReason}
+          aria-describedby={!canStartCalibration ? "calibration-reason" : undefined}
+          onClick={() => {
+            if (canStartCalibration) {
+              void store.startCapture(displayName, "calibration");
+            }
+          }}
         >
           <CalibrationIcon size={17} />
           <span style="margin-left:8px">标定录制</span>
         </button>
         <span id="calibration-reason" class="visually-hidden">
-          标定录制路径尚未在 Device API v4 暴露，因此这里不提供入口，也不会回退为普通生产录制。
+          {calibrationReason}
         </span>
       </div>
     </footer>
