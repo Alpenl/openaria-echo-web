@@ -935,7 +935,7 @@ test("能力允许时标定入口只发送 calibration 模式", async ({ page, r
 
   const calibration = page.getByRole("button", { name: "标定录制" });
   await expect(calibration).toBeEnabled();
-  await page.getByLabel("录制名称（可选）").fill("标定原始双目 01");
+  await page.getByLabel("录制名称（可选）").fill("标定分眼 01");
   await calibration.click();
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
@@ -946,7 +946,7 @@ test("能力允许时标定入口只发送 calibration 模式", async ({ page, r
   expect(starts[0].body).toEqual({
     schema: "ylx.capture-start.v2",
     mode: "calibration",
-    display_name: "标定原始双目 01",
+    display_name: "标定分眼 01",
     take: { kind: "new" },
   });
 });
@@ -955,14 +955,14 @@ test("能力禁用时标定入口显示设备原因且发送零请求", async ({
   await request.post("/__fixture/config", {
     data: {
       calibrationEnabled: false,
-      calibrationReason: "native_raw_sink_unavailable",
+      calibrationReason: "capture_source_unsupported",
     },
   });
   await page.goto("/");
 
   const calibration = page.getByRole("button", { name: "标定录制" });
   await expect(calibration).toBeDisabled();
-  await expect(calibration).toHaveAttribute("title", "原始双目写入链路不可用");
+  await expect(calibration).toHaveAttribute("title", "分眼录制链路不可用");
   await calibration.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
 
   expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(0);

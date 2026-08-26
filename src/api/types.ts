@@ -72,8 +72,7 @@ export interface DeviceRuntime {
 }
 
 export type CalibrationCaptureDisabledReason =
-  | "raw_side_by_side_required"
-  | "native_raw_sink_unavailable"
+  | "capture_source_unsupported"
   | "storage_unavailable"
   | "hardware_unavailable"
   | "maintenance_or_capture_busy";
@@ -82,7 +81,7 @@ export interface CalibrationCaptureCapability {
   supported: boolean;
   enabled: boolean;
   disabled_reason: CalibrationCaptureDisabledReason | null;
-  required_video_layout: "raw-side-by-side";
+  required_video_layout: "split-eyes";
 }
 
 export interface DeviceCapabilities {

@@ -272,7 +272,7 @@ const makeDevice = () => ({
       supported: true,
       enabled: true,
       disabled_reason: null,
-      required_video_layout: "raw-side-by-side",
+      required_video_layout: "split-eyes",
     },
   },
   storage: {
@@ -1216,7 +1216,7 @@ const server = createServer(async (request, response) => {
           supported: true,
           enabled: false,
           disabled_reason: "hardware_unavailable",
-          required_video_layout: "raw-side-by-side",
+          required_video_layout: "split-eyes",
         };
       }
     }
@@ -1234,7 +1234,7 @@ const server = createServer(async (request, response) => {
           supported: true,
           enabled: false,
           disabled_reason: "storage_unavailable",
-          required_video_layout: "raw-side-by-side",
+          required_video_layout: "split-eyes",
         };
       }
     }
@@ -1244,8 +1244,8 @@ const server = createServer(async (request, response) => {
         enabled: config.calibrationEnabled,
         disabled_reason: config.calibrationEnabled
           ? null
-          : (config.calibrationReason ?? "native_raw_sink_unavailable"),
-        required_video_layout: "raw-side-by-side",
+          : (config.calibrationReason ?? "capture_source_unsupported"),
+        required_video_layout: "split-eyes",
       };
     }
     if (config.calibrationUnknownField === true) {
@@ -1883,7 +1883,7 @@ const server = createServer(async (request, response) => {
           details: {
             reason:
               fixture.device.capabilities.calibration_capture.disabled_reason ??
-              "native_raw_sink_unavailable",
+              "capture_source_unsupported",
           },
         },
       });

@@ -6,8 +6,7 @@ import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./for
 import { CalibrationIcon, EjectIcon } from "./icons";
 
 const CALIBRATION_DISABLED_REASON_LABELS: Record<CalibrationCaptureDisabledReason, string> = {
-  raw_side_by_side_required: "当前配置不能生成原始双目布局",
-  native_raw_sink_unavailable: "原始双目写入链路不可用",
+  capture_source_unsupported: "分眼录制链路不可用",
   storage_unavailable: "录制存储不可用",
   hardware_unavailable: "相机硬件不可用",
   maintenance_or_capture_busy: "设备正忙",
@@ -96,7 +95,7 @@ export function CommandBar({ state }: { state: AppState }) {
   const calibrationCapability = state.device?.capabilities.calibration_capture;
   const canStartCalibration = canStart && calibrationCapability?.enabled === true;
   const calibrationReason = calibrationCapability?.enabled
-    ? "开始原始双目标定录制"
+    ? "开始分眼标定录制"
     : calibrationCapability
       ? CALIBRATION_DISABLED_REASON_LABELS[calibrationCapability.disabled_reason!]
       : "设备未报告标定录制能力";

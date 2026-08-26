@@ -29,8 +29,8 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "2063909abe8363272d72371992de8dfb14b0d0c70333867eae9b97d83dd9054a",
-    bytes: 120790,
+    sha256: "f1185da08f50857d1f231701d14dfc42ab5cf3f6abce65d5d6d5c90510a52210",
+    bytes: 120760,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",
@@ -405,7 +405,7 @@ test("焦距更新同步写入 device 与 capture runtime", () => {
         supported: true,
         enabled: true,
         disabled_reason: null,
-        required_video_layout: "raw-side-by-side",
+        required_video_layout: "split-eyes",
       },
     },
     storage: {
