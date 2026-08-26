@@ -424,13 +424,16 @@ export class EchoStore {
 
   closeSession = (): void => this.dispatch({ type: "session.closed" });
 
-  startCapture = async (displayName?: string): Promise<void> => {
+  startCapture = async (
+    displayName?: string,
+    mode: "production" | "calibration" = "production",
+  ): Promise<void> => {
     if (this.state.commandPending || this.state.connection !== "connected") {
       return;
     }
     this.dispatch({ type: "command.pending" });
     try {
-      const capture = await deviceApi.startCapture(displayName);
+      const capture = await deviceApi.startCapture(displayName, mode);
       if (capture) {
         this.dispatch({ type: "capture.snapshot", payload: capture });
       }

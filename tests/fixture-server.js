@@ -68,6 +68,7 @@ const previewJpeg = Buffer.from(
  * @property {number} commandDelayMs
  * @property {boolean} stopReturns204
  * @property {boolean} startProblem
+ * @property {boolean} calibrationStartUnavailable
  * @property {boolean} stopProblem
  * @property {boolean} eventsUnavailable
  * @property {boolean} sessionsVolumeUnavailable
@@ -267,6 +268,12 @@ const makeDevice = () => ({
     preview: true,
     range_download: true,
     network_mutation: true,
+    calibration_capture: {
+      supported: true,
+      enabled: true,
+      disabled_reason: null,
+      required_video_layout: "raw-side-by-side",
+    },
   },
   storage: {
     volume_id: volumeId,
@@ -354,6 +361,7 @@ function makeFixture() {
     commandDelayMs: 0,
     stopReturns204: false,
     startProblem: false,
+    calibrationStartUnavailable: false,
     stopProblem: false,
     eventsUnavailable: false,
     sessionsVolumeUnavailable: false,
@@ -1135,7 +1143,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/__fixture/config" && request.method === "POST") {
-    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, cameraConnected?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string}} */ (
+    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, cameraConnected?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string, calibrationEnabled?: boolean, calibrationReason?: import("../src/api/types.ts").CalibrationCaptureDisabledReason, calibrationUnknownField?: boolean, calibrationStartUnavailable?: boolean}} */ (
       await readJson(request)
     );
     if (typeof config.apiVersion === "string") {
@@ -1156,6 +1164,9 @@ const server = createServer(async (request, response) => {
     }
     if (typeof config.startProblem === "boolean") {
       fixture.startProblem = config.startProblem;
+    }
+    if (typeof config.calibrationStartUnavailable === "boolean") {
+      fixture.calibrationStartUnavailable = config.calibrationStartUnavailable;
     }
     if (typeof config.stopProblem === "boolean") {
       fixture.stopProblem = config.stopProblem;
@@ -1200,6 +1211,14 @@ const server = createServer(async (request, response) => {
           },
         },
       };
+      if (!config.cameraConnected) {
+        fixture.device.capabilities.calibration_capture = {
+          supported: true,
+          enabled: false,
+          disabled_reason: "hardware_unavailable",
+          required_video_layout: "raw-side-by-side",
+        };
+      }
     }
     if (typeof config.sessionsVolumeUnavailable === "boolean") {
       fixture.sessionsVolumeUnavailable = config.sessionsVolumeUnavailable;
@@ -1211,7 +1230,26 @@ const server = createServer(async (request, response) => {
           available_bytes: 0,
           writable: false,
         };
+        fixture.device.capabilities.calibration_capture = {
+          supported: true,
+          enabled: false,
+          disabled_reason: "storage_unavailable",
+          required_video_layout: "raw-side-by-side",
+        };
       }
+    }
+    if (typeof config.calibrationEnabled === "boolean") {
+      fixture.device.capabilities.calibration_capture = {
+        supported: true,
+        enabled: config.calibrationEnabled,
+        disabled_reason: config.calibrationEnabled
+          ? null
+          : (config.calibrationReason ?? "native_raw_sink_unavailable"),
+        required_video_layout: "raw-side-by-side",
+      };
+    }
+    if (config.calibrationUnknownField === true) {
+      Object.assign(fixture.device.capabilities.calibration_capture, { debug: true });
     }
     if (Number.isFinite(config.sessionsDelayMs)) {
       fixture.sessionsDelayMs = Number(config.sessionsDelayMs);
@@ -1816,7 +1854,7 @@ const server = createServer(async (request, response) => {
     if (
       !request.headers["idempotency-key"] ||
       body.schema !== "ylx.capture-start.v2" ||
-      body.mode !== "production" ||
+      !["production", "calibration"].includes(body.mode ?? "") ||
       body.take?.kind !== "new"
     ) {
       sendJson(response, 400, {
@@ -1826,6 +1864,27 @@ const server = createServer(async (request, response) => {
           message: "录制请求不符合 v4 契约",
           request_id: "f91cd40f-5715-46be-8fa8-cc67b58d1572",
           retryable: false,
+        },
+      });
+      return;
+    }
+    if (
+      body.mode === "calibration" &&
+      (fixture.calibrationStartUnavailable ||
+        fixture.device.capabilities.calibration_capture.enabled !== true)
+    ) {
+      sendJson(response, 503, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "calibration_unavailable",
+          message: "标定录制不可用",
+          request_id: "0951df65-d204-40b3-ad55-6fc894571ae9",
+          retryable: false,
+          details: {
+            reason:
+              fixture.device.capabilities.calibration_capture.disabled_reason ??
+              "native_raw_sink_unavailable",
+          },
         },
       });
       return;

@@ -71,11 +71,26 @@ export interface DeviceRuntime {
   camera_focus: CameraFocusStatus | null;
 }
 
+export type CalibrationCaptureDisabledReason =
+  | "raw_side_by_side_required"
+  | "native_raw_sink_unavailable"
+  | "storage_unavailable"
+  | "hardware_unavailable"
+  | "maintenance_or_capture_busy";
+
+export interface CalibrationCaptureCapability {
+  supported: boolean;
+  enabled: boolean;
+  disabled_reason: CalibrationCaptureDisabledReason | null;
+  required_video_layout: "raw-side-by-side";
+}
+
 export interface DeviceCapabilities {
   capture: boolean;
   preview: boolean;
   range_download: boolean;
   network_mutation: boolean;
+  calibration_capture: CalibrationCaptureCapability;
 }
 
 export interface DeviceDescriptor {

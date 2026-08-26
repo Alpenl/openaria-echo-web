@@ -29,8 +29,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "b74654c9e36d7d1b49bf6c13b3f712d25b6f38847e32b09662b0c3bcc57cc1f4",
-      bytes: 117734,
+      sha256: "2063909abe8363272d72371992de8dfb14b0d0c70333867eae9b97d83dd9054a",
+      bytes: 120790,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -66,6 +66,68 @@ function deviceApiMajor(apiVersion: unknown): number | null {
   return match ? Number(match[1]) : null;
 }
 
+const CAPABILITY_KEYS = new Set([
+  "capture",
+  "preview",
+  "range_download",
+  "network_mutation",
+  "calibration_capture",
+]);
+const CALIBRATION_CAPABILITY_KEYS = new Set([
+  "supported",
+  "enabled",
+  "disabled_reason",
+  "required_video_layout",
+]);
+const CALIBRATION_DISABLED_REASONS = new Set([
+  "raw_side_by_side_required",
+  "native_raw_sink_unavailable",
+  "storage_unavailable",
+  "hardware_unavailable",
+  "maintenance_or_capture_busy",
+]);
+
+function hasExactKeys(value: unknown, keys: ReadonlySet<string>): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === keys.size &&
+    Object.keys(value).every((key) => keys.has(key))
+  );
+}
+
+function assertSupportedCapabilities(device: DeviceDescriptor): void {
+  const capabilities: unknown = device.capabilities;
+  const calibration = hasExactKeys(capabilities, CAPABILITY_KEYS)
+    ? capabilities.calibration_capture
+    : null;
+  const closedCalibration = hasExactKeys(calibration, CALIBRATION_CAPABILITY_KEYS);
+  const booleansValid =
+    hasExactKeys(capabilities, CAPABILITY_KEYS) &&
+    typeof capabilities.capture === "boolean" &&
+    typeof capabilities.preview === "boolean" &&
+    capabilities.range_download === true &&
+    typeof capabilities.network_mutation === "boolean";
+  const calibrationValid =
+    closedCalibration &&
+    typeof calibration.supported === "boolean" &&
+    typeof calibration.enabled === "boolean" &&
+    calibration.required_video_layout === "raw-side-by-side" &&
+    (calibration.enabled === true
+      ? calibration.supported === true && calibration.disabled_reason === null
+      : typeof calibration.disabled_reason === "string" &&
+        CALIBRATION_DISABLED_REASONS.has(calibration.disabled_reason));
+  if (!booleansValid || !calibrationValid) {
+    throw new DeviceApiError(
+      "Device API capabilities 不符合 v4 契约",
+      502,
+      "unsupported_device_api_schema",
+      { field: "capabilities.calibration_capture" },
+    );
+  }
+}
+
 function assertSupportedDevice(device: DeviceDescriptor): DeviceDescriptor {
   const major = deviceApiMajor(device.api_version);
   if (
@@ -81,6 +143,7 @@ function assertSupportedDevice(device: DeviceDescriptor): DeviceDescriptor {
       supported_device_api_majors: [...DEVICE_API_CONSUMER_SUPPORT.supported_device_api_majors],
     });
   }
+  assertSupportedCapabilities(device);
   return device;
 }
 

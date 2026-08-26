@@ -255,6 +255,16 @@ test("未知 Device API major 失败关闭且不回退 v3 raw", async ({ page, r
   expect(pageApiPaths.some((path) => path.startsWith("/api/v3/"))).toBe(false);
 });
 
+test("标定 capability 出现未知字段时失败关闭", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { calibrationUnknownField: true } });
+
+  await page.goto("/");
+
+  await expect(page.locator(".connection")).toHaveText("连接中断");
+  await expect(page.getByRole("alert")).toContainText("unsupported_device_api_schema");
+  expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(0);
+});
+
 test("v4 state 事件触发一次权威刷新并保持事件流连接", async ({ page, request }) => {
   /** @type {string[]} */
   const warnings = [];
@@ -918,6 +928,84 @@ test("录制名称可留空并由设备使用可读真实时间命名", async ({
     mode: "production",
     take: { kind: "new" },
   });
+});
+
+test("能力允许时标定入口只发送 calibration 模式", async ({ page, request }) => {
+  await page.goto("/");
+
+  const calibration = page.getByRole("button", { name: "标定录制" });
+  await expect(calibration).toBeEnabled();
+  await page.getByLabel("录制名称（可选）").fill("标定原始双目 01");
+  await calibration.click();
+
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  const starts = body.requests.filter((entry) => entry.path === "/api/v4/capture/start");
+  expect(starts).toHaveLength(1);
+  expect(starts[0].body).toEqual({
+    schema: "ylx.capture-start.v2",
+    mode: "calibration",
+    display_name: "标定原始双目 01",
+    take: { kind: "new" },
+  });
+});
+
+test("能力禁用时标定入口显示设备原因且发送零请求", async ({ page, request }) => {
+  await request.post("/__fixture/config", {
+    data: {
+      calibrationEnabled: false,
+      calibrationReason: "native_raw_sink_unavailable",
+    },
+  });
+  await page.goto("/");
+
+  const calibration = page.getByRole("button", { name: "标定录制" });
+  await expect(calibration).toBeDisabled();
+  await expect(calibration).toHaveAttribute("title", "原始双目写入链路不可用");
+  await calibration.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
+
+  expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(0);
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+});
+
+test("录制忙碌时标定入口禁用且不发送第二个 start", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "开始录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+
+  const calibration = page.getByRole("button", { name: "标定录制" });
+  await expect(calibration).toBeDisabled();
+  await calibration.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
+  expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(1);
+});
+
+test("标定能力在请求时过期会显示设备错误且恢复后可重试", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { calibrationStartUnavailable: true } });
+  await page.goto("/");
+  await page.getByRole("button", { name: "标定录制" }).click();
+
+  await expect(page.getByRole("alert")).toContainText("calibration_unavailable");
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(1);
+
+  await request.post("/__fixture/config", { data: { calibrationStartUnavailable: false } });
+  await page.getByRole("button", { name: "标定录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(2);
+});
+
+test("标定录制终态刷新后进入会话台账", async ({ page }) => {
+  await page.goto("/");
+  const name = "标定终态刷新";
+  await page.getByLabel("录制名称（可选）").fill(name);
+  await page.getByRole("button", { name: "标定录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  await page.getByRole("button", { name: "结束录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+
+  await openPanel(page, "会话台账");
+  await expect(page.getByTestId("session-item").filter({ hasText: name })).toHaveCount(1);
 });
 
 test("录制命令在权威快照到达前保持待机", async ({ page, request }) => {
