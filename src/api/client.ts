@@ -29,8 +29,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "2063909abe8363272d72371992de8dfb14b0d0c70333867eae9b97d83dd9054a",
-      bytes: 120790,
+      sha256: "f1185da08f50857d1f231701d14dfc42ab5cf3f6abce65d5d6d5c90510a52210",
+      bytes: 120760,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -80,8 +80,7 @@ const CALIBRATION_CAPABILITY_KEYS = new Set([
   "required_video_layout",
 ]);
 const CALIBRATION_DISABLED_REASONS = new Set([
-  "raw_side_by_side_required",
-  "native_raw_sink_unavailable",
+  "capture_source_unsupported",
   "storage_unavailable",
   "hardware_unavailable",
   "maintenance_or_capture_busy",
@@ -113,7 +112,7 @@ function assertSupportedCapabilities(device: DeviceDescriptor): void {
     closedCalibration &&
     typeof calibration.supported === "boolean" &&
     typeof calibration.enabled === "boolean" &&
-    calibration.required_video_layout === "raw-side-by-side" &&
+    calibration.required_video_layout === "split-eyes" &&
     (calibration.enabled === true
       ? calibration.supported === true && calibration.disabled_reason === null
       : typeof calibration.disabled_reason === "string" &&
