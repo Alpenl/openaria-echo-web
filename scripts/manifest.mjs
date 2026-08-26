@@ -13,6 +13,9 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const distDir = join(root, "dist");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+const deviceApiSupport = JSON.parse(
+  readFileSync(join(root, "contracts", "ylx-device-api-support.json"), "utf8"),
+);
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -39,6 +42,30 @@ function walk(dir) {
   return out;
 }
 
+function requiredDeviceApiMajor(support) {
+  const majors = support.supported_device_api_majors;
+  if (
+    support.schema !== "ylx.device-api-consumer-support.v1" ||
+    support.consumer !== pkg.name ||
+    support.unknown_major_policy !== "fail_closed" ||
+    !Array.isArray(majors) ||
+    majors.length !== 1 ||
+    !Number.isInteger(majors[0]) ||
+    majors[0] < 1
+  ) {
+    throw new Error("Device API consumer support must declare exactly one fail-closed major");
+  }
+
+  const requiredMajor = majors[0];
+  const requiredContract = support.required_contracts?.find(
+    (contract) => contract.major === requiredMajor,
+  );
+  if (requiredContract?.server_base_path !== `/api/v${requiredMajor}`) {
+    throw new Error(`Device API v${requiredMajor} contract is missing or has the wrong base path`);
+  }
+  return requiredMajor;
+}
+
 const files = walk(distDir)
   .map((full) => {
     const name = relative(distDir, full).split(sep).join("/");
@@ -55,9 +82,14 @@ const files = walk(distDir)
   .sort((left, right) => left.path.localeCompare(right.path));
 
 const manifest = {
-  schema: "openaria.echo-web-artifacts.v1",
+  schema: "openaria.echo-web-artifacts.v2",
   name: pkg.name,
   version: pkg.version,
+  compatibility: {
+    device_api: {
+      required_major: requiredDeviceApiMajor(deviceApiSupport),
+    },
+  },
   total_bytes: files.reduce((sum, file) => sum + file.bytes, 0),
   files,
 };
