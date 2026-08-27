@@ -7,7 +7,6 @@ import type {
   NetworkEvent,
   NetworkTransactionReceipt,
   NetworkWifiSecurity,
-  SafeSwapReceipt,
   SessionList,
 } from "../api/types";
 import {
@@ -157,22 +156,8 @@ export class EchoStore {
       this.dispatch({ type: "error.cleared" });
       this.dispatch({ type: "credentials.cleared" });
 
-      // 会话清单在大卷上要做完整 manifest 校验；它和维护资源都不能阻塞
+      // 会话清单在大卷上要做完整 manifest 校验；它和设备辅助资源都不能阻塞
       // 权威状态、SSE 或预览，否则设备在线时界面仍会长时间显示未连接。
-      void deviceApi
-        .getSafeSwap()
-        .then((safeSwap) => {
-          if (safeSwap?.schema === "ylx.safe-swap-receipt-resource.v3") {
-            this.acceptSafeSwapReceipt(
-              safeSwap.receipt,
-              capture.authority_epoch,
-              capture.source_revision,
-            );
-          } else {
-            this.dispatch({ type: "safe-swap.cleared" });
-          }
-        })
-        .catch((error) => console.warn(error));
       void deviceApi
         .getNetwork()
         .then((network) => this.dispatch({ type: "network.loaded", payload: network }))
@@ -192,46 +177,6 @@ export class EchoStore {
       });
       return false;
     }
-  }
-
-  /**
-   * 七项一致才接受回执：schema、当前权威、当前修订、当前卷、指定 session、
-   * generation/session/volume 身份、release_state，外加 open_handle_count = 0。
-   */
-  acceptSafeSwapReceipt(
-    receipt: unknown,
-    authorityEpoch: string,
-    sourceRevision: number,
-    subjectSessionId: string | null = null,
-  ): boolean {
-    const candidate = receipt as SafeSwapReceipt | null;
-    const current = this.state.capture;
-    const recording = current?.snapshot.active_recording ?? current?.snapshot.retained_unsuccessful;
-    const identitiesMatch =
-      !recording ||
-      (recording.generation_id === candidate?.generation_id &&
-        recording.recording_state.session_id === candidate?.session_id &&
-        recording.recording_state.storage.volume_id === candidate?.volume_id);
-    const isReleased =
-      candidate?.release_state === "unmounted" || candidate?.release_state === "device-released";
-    if (
-      candidate?.schema !== "ylx.safe-swap-receipt.v3" ||
-      !current ||
-      current.authority_epoch !== authorityEpoch ||
-      current.source_revision !== sourceRevision ||
-      this.state.device?.storage.volume_id !== candidate.volume_id ||
-      (subjectSessionId !== null && subjectSessionId !== candidate.session_id) ||
-      !identitiesMatch ||
-      !isReleased ||
-      candidate.open_handle_count !== 0
-    ) {
-      return false;
-    }
-    this.dispatch({
-      type: "safe-swap.received",
-      payload: { receipt: candidate, authorityEpoch, sourceRevision },
-    });
-    return true;
   }
 
   refreshCapture = async (): Promise<void> => {
@@ -263,19 +208,9 @@ export class EchoStore {
 
   refreshRelatedResources = async (): Promise<void> => {
     if (!this.relatedRefresh) {
-      this.relatedRefresh = Promise.all([deviceApi.getDevice(), deviceApi.getSafeSwap()])
-        .then(([device, safeSwap]) => {
-          this.dispatch({ type: "device.loaded", payload: device });
-          if (safeSwap?.schema === "ylx.safe-swap-receipt-resource.v3" && this.state.capture) {
-            this.acceptSafeSwapReceipt(
-              safeSwap.receipt,
-              this.state.capture.authority_epoch,
-              this.state.capture.source_revision,
-            );
-          } else {
-            this.dispatch({ type: "safe-swap.cleared" });
-          }
-        })
+      this.relatedRefresh = deviceApi
+        .getDevice()
+        .then((device) => this.dispatch({ type: "device.loaded", payload: device }))
         .catch((error) => console.warn(error))
         .finally(() => {
           this.relatedRefresh = null;
@@ -446,18 +381,16 @@ export class EchoStore {
     }
   };
 
-  stopCapture = async (reason: "user" | "safe_swap"): Promise<void> => {
+  stopCapture = async (): Promise<void> => {
     if (this.state.commandPending || this.state.connection !== "connected") {
       return;
     }
     const stoppedSessionId =
-      reason === "user"
-        ? (this.state.capture?.snapshot.active_recording?.recording_state.session_id ?? null)
-        : null;
+      this.state.capture?.snapshot.active_recording?.recording_state.session_id ?? null;
     this.dispatch({ type: "command.pending" });
     try {
       const beforeStop = this.state.capture;
-      const capture = await deviceApi.stopCapture(reason);
+      const capture = await deviceApi.stopCapture("user");
       if (capture) {
         this.dispatch({ type: "capture.snapshot", payload: capture });
       }
@@ -721,6 +654,11 @@ export class EchoStore {
       }
       return;
     }
+    // D-049 keeps the event discriminator wire-compatible, but Echo does not mount
+    // the removable-media workflow or reconcile its receipt resource.
+    if (event.type === "safe_swap") {
+      return;
+    }
     const current = this.state.capture;
     const isNextSnapshot =
       event.type === "snapshot" &&
@@ -749,18 +687,6 @@ export class EchoStore {
       current &&
       event.authority_epoch === current.authority_epoch &&
       event.source_revision === current.source_revision;
-    if (matchesCurrent && event.type === "safe_swap") {
-      const accepted = this.acceptSafeSwapReceipt(
-        event.data,
-        event.authority_epoch,
-        event.source_revision,
-        event.session_id ?? null,
-      );
-      if (accepted) {
-        await this.refreshRelatedResources();
-      }
-      return;
-    }
     const diagnosticEnvelope = event.data as { schema?: string; diagnostic?: unknown } | null;
     if (
       matchesCurrent &&
@@ -775,7 +701,7 @@ export class EchoStore {
     }
     const beforeRefresh = this.state.capture;
     await this.refreshCapture();
-    if (event.type === "safe_swap" || event.type === "snapshot") {
+    if (event.type === "snapshot") {
       await this.refreshRelatedResources();
       const stoppedSessionId = sealedTerminalSessionId(beforeRefresh, this.state.capture);
       if (stoppedSessionId) {

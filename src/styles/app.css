@@ -7,7 +7,7 @@
  *   record  实心红   仅 device_state=recording
  *   fault   红斜纹   blocked / failed / abandoned / media_lost / unusable
  *   caution 琥珀     finalizing / verifying / degraded / 尚未校验 / 断线
- *   permit  绿       仅 safe-swap 已授权
+ *   positive 绿      已连接或消费方确认可用
  *   live    冷青     仅实时数值前景，绝不作背景
  * 全站无循环动画：录制指示常亮。
  */
@@ -30,7 +30,7 @@
   --record: #ff3b2d;
   --fault: #ff3b2d;
   --caution: #e0a020;
-  --permit: #46c98a;
+  --positive: #46c98a;
   --live: #7fe3f5;
   --link: #8ec5ff;
   --peak: #e858ff;
@@ -361,7 +361,7 @@ a:hover {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--permit);
+  background: var(--positive);
 }
 
 .link-dot[data-state="connecting"]::before,
@@ -428,32 +428,6 @@ a:hover {
   font-size: 11px;
   color: var(--ink-2);
   word-break: break-all;
-}
-
-/* 介质许可带：permit 绿的两个合法出现位置之一，只由 typed receipt 驱动。 */
-.permit {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: var(--glass-strong);
-  border-top: 1px solid var(--permit);
-  border-bottom: 1px solid var(--permit);
-  backdrop-filter: blur(12px);
-}
-
-.permit-mark {
-  width: 12px;
-  height: 20px;
-  flex: none;
-  background: var(--permit);
-}
-
-.permit .tag {
-  color: var(--permit);
-  border-color: var(--permit);
 }
 
 .alerts {
@@ -847,11 +821,6 @@ a:hover {
   border-color: var(--record);
 }
 
-.command-button[data-tone="permit"] {
-  border-color: var(--permit);
-  color: var(--permit);
-}
-
 .command-button:disabled {
   color: var(--ink-3);
   border-color: var(--hairline);
@@ -1042,7 +1011,7 @@ a:hover {
 }
 
 .verdict[data-verdict="usable"] {
-  color: var(--permit);
+  color: var(--positive);
 }
 
 .verdict[data-verdict="unusable"] {
@@ -1112,10 +1081,6 @@ a:hover {
 
 .facts dd[data-tone="caution"] {
   color: var(--caution);
-}
-
-.facts dd[data-tone="permit"] {
-  color: var(--permit);
 }
 
 .facts dd[data-tone="fault"] {

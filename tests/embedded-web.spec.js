@@ -1341,53 +1341,30 @@ test("空闲预览不可用不会持续污染浏览器控制台", async ({ page 
   expect(warnings).toEqual([]);
 });
 
-test("只有 typed safe-swap 回执允许移除存储设备且刷新可恢复", async ({ page, request }) => {
-  await page.goto("/");
-  await expect(page.getByText("可以移除存储设备")).not.toBeVisible();
+test("D-049 不挂载可移除介质和安全换盘工作流", async ({ page, request }) => {
+  const safeSwapQueries = [];
+  page.on("request", (browserRequest) => {
+    if (new URL(browserRequest.url()).pathname === "/api/v4/capture/safe-swap") {
+      safeSwapQueries.push(browserRequest.url());
+    }
+  });
 
-  await page.getByLabel("录制名称").fill("换盘测试");
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "安全换盘" })).toHaveCount(0);
+  await expect(page.getByTestId("media-release")).toHaveCount(0);
+  await expect(page.getByText("可以移除存储设备", { exact: true })).toHaveCount(0);
+
+  await page.getByLabel("录制名称").fill("固定存储测试");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-  await page.getByRole("button", { name: "安全换盘" }).click();
-
-  await expect(page.getByTestId("capture-state")).toHaveText("正在结束");
-  await expect(page.getByText("可以移除存储设备")).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "安全换盘" })).toHaveCount(0);
 
   await request.post("/__fixture/safe-swap");
-  await expect(page.getByText("可以移除存储设备", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("safe-swap-release")).toHaveText("设备已释放");
-
-  await page.reload();
-  await expect(page.getByText("可以移除存储设备", { exact: true })).toBeVisible();
-});
-
-test("跳号换盘事件只通过权威状态和回执资源收敛", async ({ page, request }) => {
-  await page.goto("/");
-  await page.getByLabel("录制名称").fill("跳号换盘");
-  await page.getByRole("button", { name: "开始录制" }).click();
-  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-  await page.getByRole("button", { name: "安全换盘" }).click();
-
-  await request.post("/__fixture/safe-swap-gap");
-
-  await expect(page.getByTestId("capture-state")).toHaveText("待机");
-  await expect(page.getByText("可以移除存储设备", { exact: true })).toBeVisible();
-});
-
-test("仍挂载或存在打开句柄的换盘事件不能授权移除", async ({ page, request }) => {
-  await page.goto("/");
-  await page.getByLabel("录制名称").fill("拒绝不安全回执");
-  await page.getByRole("button", { name: "开始录制" }).click();
-  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-
-  await request.post("/__fixture/unsafe-safe-swap", { data: { state: "mounted" } });
-  await expect(page.getByText("可以移除存储设备", { exact: true })).not.toBeVisible();
-  await request.post("/__fixture/unsafe-safe-swap", { data: { state: "open-handles" } });
-  await expect(page.getByText("可以移除存储设备", { exact: true })).not.toBeVisible();
-
-  await page.getByRole("button", { name: "安全换盘" }).click();
-  await request.post("/__fixture/safe-swap");
-  await expect(page.getByText("可以移除存储设备", { exact: true })).toBeVisible();
+  await request.post("/__fixture/stale-safe-swap");
+  await page.waitForTimeout(350);
+  await expect(page.getByTestId("safe-swap-release")).toHaveCount(0);
+  await expect(page.getByText("介质释放回执", { exact: true })).toHaveCount(0);
+  expect(safeSwapQueries).toEqual([]);
 });
 
 test("结束录制接受空 204 并重新读取权威状态", async ({ page, request }) => {
@@ -1505,23 +1482,6 @@ test("结束录制原样显示 API problem 且服务恢复后可重试", async (
   await page.getByRole("button", { name: "结束录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.getByRole("alert")).toHaveCount(0);
-});
-
-test("新录制清除旧换盘回执且拒绝旧 authority 事件", async ({ page, request }) => {
-  await page.goto("/");
-  await page.getByLabel("录制名称").fill("第一段换盘");
-  await page.getByRole("button", { name: "开始录制" }).click();
-  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-  await page.getByRole("button", { name: "安全换盘" }).click();
-  await request.post("/__fixture/safe-swap");
-  await expect(page.getByText("可以移除存储设备", { exact: true })).toBeVisible();
-
-  await request.post("/__fixture/new-authority-recording");
-  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-  await expect(page.getByText("可以移除存储设备", { exact: true })).not.toBeVisible();
-
-  await request.post("/__fixture/stale-safe-swap");
-  await expect(page.getByText("可以移除存储设备", { exact: true })).not.toBeVisible();
 });
 
 test("会话列表保持生产终态与网关可用性分离并显示发现诊断", async ({ page }) => {

@@ -102,7 +102,6 @@ function FocusControl({ state }: { state: AppState }) {
 export function DevicePanel({ state }: { state: AppState }) {
   const device = state.device;
   const runtime = state.capture?.snapshot.runtime ?? device?.runtime ?? null;
-  const receipt = state.safeSwapReceipt?.receipt ?? null;
 
   return (
     <aside id="device-panel" class="panel" aria-label="设备与链路">
@@ -126,39 +125,6 @@ export function DevicePanel({ state }: { state: AppState }) {
       </div>
 
       <div class="panel-body">
-        {receipt ? (
-          <section class="detail-section" style="border-left:3px solid var(--permit)">
-            <span class="eyebrow">MEDIA RELEASE</span>
-            <h3>介质释放回执</h3>
-            <dl class="facts">
-              <div>
-                <dt>释放结果</dt>
-                <dd data-tone="permit">{receipt.release_state}</dd>
-              </div>
-              <div>
-                <dt>会话</dt>
-                <dd>{receipt.session_id}</dd>
-              </div>
-              <div>
-                <dt>句柄数</dt>
-                <dd data-tone="permit">{receipt.open_handle_count}</dd>
-              </div>
-              <div>
-                <dt>密封于</dt>
-                <dd>{formatClock(receipt.sealed_at)}</dd>
-              </div>
-              <div>
-                <dt>释放于</dt>
-                <dd>{formatClock(receipt.released_at)}</dd>
-              </div>
-              <div>
-                <dt>manifest sha256</dt>
-                <dd class="artifact-hash">{receipt.manifest_sha256}</dd>
-              </div>
-            </dl>
-          </section>
-        ) : null}
-
         <section class="detail-section">
           <span class="eyebrow">RUNTIME</span>
           <dl class="facts">

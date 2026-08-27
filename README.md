@@ -63,7 +63,7 @@ ECHO_DEVICE=http://<设备地址>:8080 npm run dev  # 设备接在别的网络�
 ```
 src/
   api/      Device API v4 的类型、客户端、SSE 事件流与预览传输
-  state/    权威快照的 reducer 与编排 store（幂等命令、回执校验、事件流快路径）
+  state/    权威快照的 reducer 与编排 store（幂等命令、事件流快路径）
   ui/       取景器、命令条、会话台账与详情、设备面板
   styles/   单一样式表与设计令牌
 ```
@@ -73,9 +73,9 @@ src/
 - **快照单调**：同一 `authority_epoch` 内 `source_revision` 严格递增，倒退的快照直接丢弃。
 - **SSE 只是传输**：`sse_delivery_id` 不是修订号；只有严格 +1 的快照走快路径，其余一律
   回到 HTTP 权威快照重取。
-- **安全换盘回执七项校验**：schema、当前权威、当前修订、当前卷、指定 session、
-  generation/session/volume 身份一致、`release_state` 已释放且 `open_handle_count = 0`。
-  任何一项对不上就丢弃——没有有效回执时界面绝不显示「可以移除」。
+- **D-049 固定存储边界**：当前网页不提供可移除介质、存储选择或安全换盘，不请求
+  `/capture/safe-swap`，也不投影 frozen safe-swap SSE。API 类型与 client method 只为 exact wire
+  compatibility 保留，不能据此恢复产品入口。
 - **生产方声明与消费方判断分开显示**：`producer_outcome = sealed` 只证明生产方自洽；
   能否消费由 gateway 对当前字节独立判定。只有判为 usable 的不可变快照才出现下载入口。
 - **持久历史不当新告警**：只有本页亲眼看到活动录制转入未成功终态时才播报它的诊断，
