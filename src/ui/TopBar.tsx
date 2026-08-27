@@ -15,8 +15,6 @@ export function TopBar({ state }: { state: AppState }) {
   const storage = state.device?.storage;
   const runtime = snapshot?.runtime ?? state.device?.runtime ?? null;
   const connectionMethod = connectionMethodLabel(runtime?.connection_method);
-  // 介质许可只由通过七项校验的 typed receipt 驱动，绝不从状态或列表推断。
-  const released = state.safeSwapReceipt !== null;
 
   return (
     <header class="topbar">
@@ -63,14 +61,6 @@ export function TopBar({ state }: { state: AppState }) {
             {connectionMethod}
           </span>
         </button>
-        <span
-          class="tag"
-          data-testid="media-release"
-          data-state={released ? "released" : "held"}
-          style={released ? "color:var(--permit);border-color:var(--permit)" : undefined}
-        >
-          {released ? "可移除" : "使用中"}
-        </span>
         <output class="connection link-dot" data-state={state.connection} aria-live="polite">
           {CONNECTION_LABELS[state.connection] ?? state.connection}
         </output>

@@ -7,7 +7,6 @@ import type {
   NetworkScanResult,
   NetworkStatus,
   NetworkTransactionReceipt,
-  SafeSwapState,
   SessionDetail,
   SessionList,
   UnsuccessfulOutcome,
@@ -61,7 +60,6 @@ export interface AppState {
     phase: NetworkCommandPhase;
     transactionId: string | null;
   };
-  safeSwapReceipt: SafeSwapState | null;
   sessions: SessionsState;
   selected: SelectedSession | null;
   diagnostics: Diagnostic[];
@@ -98,8 +96,6 @@ export type Action =
   | { type: "network.command.indeterminate"; operation: NetworkOperation; error: VisibleError }
   | { type: "network.command.failed"; operation: NetworkOperation; error: VisibleError }
   | { type: "error.cleared" }
-  | { type: "safe-swap.received"; payload: SafeSwapState }
-  | { type: "safe-swap.cleared" }
   | { type: "sessions.pending" }
   | { type: "sessions.loaded"; payload: SessionList; append: boolean }
   | { type: "sessions.failed" }
@@ -130,7 +126,6 @@ export const initialState: AppState = {
   networkScan: null,
   networkScanPending: false,
   networkCommand: { operation: null, phase: "idle", transactionId: null },
-  safeSwapReceipt: null,
   sessions: {
     items: [],
     diagnostics: [],
@@ -154,25 +149,6 @@ export const initialState: AppState = {
 
 function withCameraFocus(runtime: DeviceRuntime, focus: CameraFocusStatus): DeviceRuntime {
   return { ...runtime, camera_focus: focus };
-}
-
-/**
- * 一份 receipt 只在它描述的那次权威、那个 generation、那个 session 和那个卷上有效。
- * 任何一项对不上就丢弃：网页绝不能在没有有效回执时显示「可以移除」。
- */
-function receiptMatchesCapture(safeSwap: SafeSwapState | null, capture: CaptureStatus): boolean {
-  if (!safeSwap || safeSwap.authorityEpoch !== capture.authority_epoch) {
-    return false;
-  }
-  const recording = capture.snapshot.active_recording ?? capture.snapshot.retained_unsuccessful;
-  if (!recording) {
-    return true;
-  }
-  return (
-    recording.generation_id === safeSwap.receipt.generation_id &&
-    recording.recording_state.session_id === safeSwap.receipt.session_id &&
-    recording.recording_state.storage.volume_id === safeSwap.receipt.volume_id
-  );
 }
 
 /** source revision 在同一 authority epoch 内严格递增，倒退的快照一律丢弃。 */
@@ -201,13 +177,8 @@ function clampPeakingThreshold(threshold: number): number {
 
 export function reduceState(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case "device.loaded": {
-      const safeSwapReceipt =
-        state.safeSwapReceipt?.receipt.volume_id === action.payload.storage.volume_id
-          ? state.safeSwapReceipt
-          : null;
-      return { ...state, device: action.payload, safeSwapReceipt };
-    }
+    case "device.loaded":
+      return { ...state, device: action.payload };
     case "capture.snapshot": {
       if (isStaleCaptureSnapshot(state.capture, action.payload)) {
         return state;
@@ -215,9 +186,6 @@ export function reduceState(state: AppState, action: Action): AppState {
       return {
         ...state,
         capture: action.payload,
-        safeSwapReceipt: receiptMatchesCapture(state.safeSwapReceipt, action.payload)
-          ? state.safeSwapReceipt
-          : null,
       };
     }
     case "command.pending":
@@ -322,10 +290,6 @@ export function reduceState(state: AppState, action: Action): AppState {
       };
     case "error.cleared":
       return { ...state, error: null };
-    case "safe-swap.received":
-      return { ...state, safeSwapReceipt: action.payload };
-    case "safe-swap.cleared":
-      return { ...state, safeSwapReceipt: null };
     case "sessions.pending":
       return { ...state, sessions: { ...state.sessions, loading: true } };
     case "sessions.loaded":

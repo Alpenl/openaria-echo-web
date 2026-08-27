@@ -1,5 +1,5 @@
 import type { AppState } from "../state/reducer";
-import { OUTCOME_LABELS, releaseStateLabel } from "./format";
+import { OUTCOME_LABELS } from "./format";
 
 /**
  * 危险带投影权威快照里的持久状态，不是事件流：它永远不用 role="alert"，
@@ -53,28 +53,5 @@ export function Alerts({ state }: { state: AppState }) {
         </div>
       ))}
     </div>
-  );
-}
-
-/**
- * 介质许可带：只有通过七项校验的 typed receipt 才会让它出现。
- * 它和危险带一样是顶层持久状态，不能藏进面板——操作者要在拔盘前一眼看到。
- */
-export function PermitBand({ state }: { state: AppState }) {
-  const receipt = state.safeSwapReceipt?.receipt;
-  if (!receipt) {
-    return null;
-  }
-  return (
-    <section class="permit" role="status" aria-label="介质释放">
-      <span class="permit-mark" aria-hidden="true" />
-      <strong>可以移除存储设备</strong>
-      <span class="tag" data-testid="safe-swap-release">
-        {releaseStateLabel(receipt.release_state)}
-      </span>
-      <code class="hazard-session" data-testid="safe-swap-session">
-        {receipt.session_id}
-      </code>
-    </section>
   );
 }

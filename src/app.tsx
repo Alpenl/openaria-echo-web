@@ -7,7 +7,7 @@ import { useEchoState } from "./state/useStore";
 import { CommandBar } from "./ui/CommandBar";
 import { CredentialPrompt } from "./ui/CredentialPrompt";
 import { DevicePanel } from "./ui/DevicePanel";
-import { Alerts, HazardBand, PermitBand } from "./ui/HazardBand";
+import { Alerts, HazardBand } from "./ui/HazardBand";
 import { NetworkPanel } from "./ui/NetworkPanel";
 import { SessionsPanel } from "./ui/SessionsPanel";
 import { Stage, StageOverlays } from "./ui/Stage";
@@ -154,7 +154,6 @@ export function App() {
       <TopBar state={state} />
       <div class="stage-mid">
         <HazardBand state={state} />
-        <PermitBand state={state} />
         <Alerts state={state} />
         <StageOverlays state={state} />
       </div>

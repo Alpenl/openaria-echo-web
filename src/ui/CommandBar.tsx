@@ -3,7 +3,7 @@ import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./format";
-import { CalibrationIcon, EjectIcon } from "./icons";
+import { CalibrationIcon } from "./icons";
 
 const CALIBRATION_DISABLED_REASON_LABELS: Record<CalibrationCaptureDisabledReason, string> = {
   capture_source_unsupported: "分眼录制链路不可用",
@@ -109,7 +109,7 @@ export function CommandBar({ state }: { state: AppState }) {
           event.preventDefault();
           if (recording) {
             if (canStop) {
-              void store.stopCapture("user");
+              void store.stopCapture();
             }
           } else if (canStart) {
             void store.startCapture(displayName);
@@ -194,20 +194,7 @@ export function CommandBar({ state }: { state: AppState }) {
           </div>
         </dl>
       </form>
-
-
       <div class="command-actions">
-        <button
-          type="button"
-          class="command-button"
-          data-tone="danger"
-          disabled={!canStop}
-          title="结束并封存当前会话，等待设备释放存储介质"
-          onClick={() => void store.stopCapture("safe_swap")}
-        >
-          <EjectIcon size={17} />
-          <span style="margin-left:8px">安全换盘</span>
-        </button>
         <button
           type="button"
           class="command-button"

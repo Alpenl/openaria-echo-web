@@ -66,13 +66,6 @@ export const ExpandIcon = (props: IconProps) => (
   </Icon>
 );
 
-export const EjectIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M12 3.5L4.5 12h15L12 3.5z" />
-    <path d="M4.5 16.5h15v4h-15z" />
-  </Icon>
-);
-
 export const CalibrationIcon = (props: IconProps) => (
   <Icon {...props}>
     <rect x="3.5" y="6.5" width="17" height="11" />

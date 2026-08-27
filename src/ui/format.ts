@@ -68,10 +68,6 @@ export function formatStepProgress(
   return `${completed}/${total}`;
 }
 
-export function releaseStateLabel(state: string | null | undefined): string {
-  return state === "device-released" ? "设备已释放" : "已卸载";
-}
-
 export function verdictLabel(verdict: string | null | undefined): string {
   if (verdict === "usable") {
     return "可用";
