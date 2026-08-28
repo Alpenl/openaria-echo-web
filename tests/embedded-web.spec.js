@@ -1359,12 +1359,31 @@ test("D-049 不挂载可移除介质和安全换盘工作流", async ({ page, re
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await expect(page.getByRole("button", { name: "安全换盘" })).toHaveCount(0);
 
-  await request.post("/__fixture/safe-swap");
-  await request.post("/__fixture/stale-safe-swap");
+  await request.post("/__fixture/frozen-safe-swap");
   await page.waitForTimeout(350);
   await expect(page.getByTestId("safe-swap-release")).toHaveCount(0);
   await expect(page.getByText("介质释放回执", { exact: true })).toHaveCount(0);
   expect(safeSwapQueries).toEqual([]);
+});
+
+test("网络 mutation 无明确响应时稳定失败且不等待重连对账", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { networkMutation: true } });
+  await page.route("**/api/v4/network/apply", (route) => route.abort("connectionfailed"));
+  await page.goto("/");
+  const panel = await openPanel(page, "网络设置");
+  await panel.getByRole("button", { name: /Open Lab/ }).click();
+  await page.getByRole("button", { name: "连接", exact: true }).click();
+  await page
+    .getByRole("alertdialog", { name: /切换到 Open Lab/ })
+    .getByRole("button", { name: "确认切换" })
+    .click();
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText("network_command_disconnected");
+  await expect(alert).toContainText(
+    "设备未返回明确的网络命令结果；本次操作已失败，连接设备后可重新发起",
+  );
+  await expect(page.getByText("连接结果待确认", { exact: false })).toHaveCount(0);
 });
 
 test("结束录制接受空 204 并重新读取权威状态", async ({ page, request }) => {
@@ -1378,6 +1397,13 @@ test("结束录制接受空 204 并重新读取权威状态", async ({ page, req
 
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.getByRole("alert")).toHaveCount(0);
+  const requests = /** @type {{requests: FixtureRequestLog[]}} */ (
+    await (await request.get("/__fixture/requests")).json()
+  ).requests;
+  expect(requests.find((entry) => entry.path === "/api/v4/capture/stop")?.body).toEqual({
+    schema: "ylx.capture-stop.v2",
+    reason: "user",
+  });
 });
 
 test("结束录制后新封存会话无刷新有界同步到台账", async ({ page, request }) => {
@@ -1497,13 +1523,14 @@ test("会话列表保持生产终态与网关可用性分离并显示发现诊�
   await expect(page.getByText("发现一个无法读取的会话清单，已隔离")).toBeVisible();
 });
 
-test("刷新页面不会把历史 retained 失败作为新错误弹出", async ({ page, request }) => {
-  await request.post("/__fixture/interrupted-capture");
+test("D-049 冻结中断结果只显示未成功且不恢复", async ({ page, request }) => {
+  await request.post("/__fixture/frozen-interrupted-outcome");
 
   await page.goto("/");
 
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
-  await expect(page.getByTestId("retained-outcome")).toHaveText("可恢复失败");
+  await expect(page.getByTestId("retained-outcome")).toHaveText("未成功");
+  await expect(page.getByText("recoverable", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("process_interrupted", { exact: true })).not.toBeVisible();
   await expect(page.getByRole("button", { name: "开始录制" })).toBeEnabled();

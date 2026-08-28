@@ -17,6 +17,10 @@ interface SsePayloadIdentity {
   type?: string;
 }
 
+/** Frozen Device API bytes are recognized only so they can be discarded here. */
+type FrozenSafeSwapCaptureEvent = Omit<CaptureEvent, "type"> & { type: "safe_swap" };
+type CaptureWireEvent = CaptureEvent | FrozenSafeSwapCaptureEvent;
+
 /**
  * SSE delivery identity 只是传输身份，不是权威修订号。envelope 与 payload
  * 三处（id / event / schema）必须逐字一致，否则这一帧不可信，直接抛错重连。
@@ -156,11 +160,19 @@ async function followEvents<T extends SsePayloadIdentity>(
 }
 
 export async function followCaptureEvents(options: FollowCaptureEventsOptions): Promise<void> {
-  await followEvents<CaptureEvent>(
+  await followEvents<CaptureWireEvent>(
     CAPTURE_EVENT_URL,
     "ylx.capture-event.v4",
     "设备事件与 SSE envelope 不一致",
-    options,
+    {
+      ...options,
+      onEvent: (event) => {
+        if (event.type === "safe_swap") {
+          return;
+        }
+        return options.onEvent(event);
+      },
+    },
   );
 }
 

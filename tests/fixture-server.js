@@ -11,7 +11,6 @@ import { createServer } from "node:http";
 /** @typedef {import("../src/api/types.ts").DeviceRuntime} DeviceRuntime */
 /** @typedef {import("../src/api/types.ts").NetworkStatus} NetworkStatus */
 /** @typedef {import("../src/api/types.ts").NetworkTransaction} NetworkTransaction */
-/** @typedef {import("../src/api/types.ts").SafeSwapReceipt} SafeSwapReceipt */
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,7 +45,6 @@ const takeId = "01989f6a-2c00-7a1b-8c2d-3e4f50617284";
 const generationId = "7d516b70-d8ab-47d1-b2dc-5b1250138789";
 const historicalSessionId = "01989f6a-2c00-7a1b-8c2d-3e4f50617288";
 const historicalTakeId = "01989f6a-2c00-7a1b-8c2d-3e4f50617289";
-const nextAuthorityEpoch = "5fa85f64-5717-4562-b3fc-2c963f66afa6";
 const nextSessionId = "01989f6a-2c00-7a1b-8c2d-3e4f50617290";
 const nextTakeId = "01989f6a-2c00-7a1b-8c2d-3e4f50617291";
 const nextGenerationId = "8d516b70-d8ab-47d1-b2dc-5b1250138789";
@@ -86,8 +84,6 @@ const previewJpeg = Buffer.from(
  * @property {number} previewMaxConcurrent
  * @property {boolean} requireBearer
  * @property {Array<{path: string, authorization: string | null, lastEventId: string | null, idempotencyKey: string | null, body?: unknown}>} apiRequests
- * @property {{schema: "ylx.safe-swap-receipt-resource.v3", receipt: SafeSwapReceipt} | null} safeSwapResource
- * @property {ReturnType<typeof captureEvent> | null} staleSafeSwapEvent
  * @property {number} captureSequence
  */
 
@@ -268,6 +264,11 @@ const makeDevice = () => ({
     preview: true,
     range_download: true,
     network_mutation: true,
+    session_list: true,
+    session_detail: true,
+    artifact_download: true,
+    capture_status: true,
+    session_deletion: false,
     calibration_capture: {
       supported: true,
       enabled: true,
@@ -379,8 +380,6 @@ function makeFixture() {
     previewMaxConcurrent: 0,
     requireBearer: false,
     apiRequests: [],
-    safeSwapResource: null,
-    staleSafeSwapEvent: null,
     captureSequence: 0,
   };
 }
@@ -916,7 +915,7 @@ function setFailed() {
   broadcastSnapshot();
 }
 
-function setInterrupted() {
+function setFrozenInterruptedOutcome() {
   fixture.snapshot.source_revision += 1;
   const recordingState = structuredClone(canonicalFailedRecordingState);
   recordingState.authority_epoch = fixture.snapshot.authority_epoch;
@@ -994,8 +993,7 @@ function advanceProgress() {
   );
 }
 
-function completeSafeSwap() {
-  /** @type {SafeSwapReceipt} */
+function broadcastFrozenSafeSwap() {
   const receipt = {
     schema: "ylx.safe-swap-receipt.v3",
     session_id: sessionId,
@@ -1008,85 +1006,7 @@ function completeSafeSwap() {
     release_state: "device-released",
     open_handle_count: 0,
   };
-  fixture.safeSwapResource = {
-    schema: "ylx.safe-swap-receipt-resource.v3",
-    receipt,
-  };
-  fixture.snapshot.source_revision += 1;
-  fixture.snapshot.snapshot = {
-    ...fixture.snapshot.snapshot,
-    device_state: "idle",
-    active_recording: null,
-    retained_unsuccessful: null,
-  };
-  broadcastSnapshot();
-  fixture.staleSafeSwapEvent = captureEvent("safe_swap", receipt, sessionId);
-  broadcastEvent(fixture.staleSafeSwapEvent);
-}
-
-function completeSafeSwapWithGap() {
-  /** @type {SafeSwapReceipt} */
-  const receipt = {
-    schema: "ylx.safe-swap-receipt.v3",
-    session_id: sessionId,
-    volume_id: volumeId,
-    generation_id: generationId,
-    manifest_id: manifestId,
-    manifest_sha256: "c".repeat(64),
-    sealed_at: "2026-08-12T02:25:03Z",
-    released_at: "2026-08-12T02:25:04Z",
-    release_state: "device-released",
-    open_handle_count: 0,
-  };
-  fixture.safeSwapResource = {
-    schema: "ylx.safe-swap-receipt-resource.v3",
-    receipt,
-  };
-  fixture.snapshot.source_revision += 2;
-  fixture.snapshot.snapshot = {
-    ...fixture.snapshot.snapshot,
-    device_state: "idle",
-    active_recording: null,
-    retained_unsuccessful: null,
-  };
   broadcastEvent(captureEvent("safe_swap", receipt, sessionId));
-}
-
-/** @param {"mounted" | "open-handles"} unsafeState */
-function broadcastUnsafeSafeSwap(unsafeState) {
-  const receipt = {
-    schema: "ylx.safe-swap-receipt.v3",
-    session_id: sessionId,
-    volume_id: volumeId,
-    generation_id: generationId,
-    manifest_id: manifestId,
-    manifest_sha256: "c".repeat(64),
-    sealed_at: "2026-08-12T02:25:03Z",
-    released_at: "2026-08-12T02:25:04Z",
-    release_state: unsafeState === "mounted" ? "mounted" : "unmounted",
-    open_handle_count: unsafeState === "open-handles" ? 1 : 0,
-  };
-  broadcastEvent(captureEvent("safe_swap", receipt, sessionId));
-}
-
-function startNewAuthorityRecording() {
-  fixture.safeSwapResource = null;
-  fixture.snapshot = makeSnapshot();
-  fixture.snapshot.authority_epoch = nextAuthorityEpoch;
-  fixture.snapshot.source_revision = 1;
-  setRecording("新 authority 录制");
-  const recording = fixture.snapshot.snapshot.active_recording;
-  if (!recording) {
-    throw new Error("fixture 未建立新录制");
-  }
-  recording.generation_id = nextGenerationId;
-  recording.recording_state = {
-    ...recording.recording_state,
-    authority_epoch: nextAuthorityEpoch,
-    session_id: nextSessionId,
-    take_id: nextTakeId,
-  };
-  broadcastSnapshot();
 }
 
 /** @param {boolean} [broadcast] */
@@ -1405,35 +1325,8 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/__fixture/safe-swap" && request.method === "POST") {
-    completeSafeSwap();
-    response.writeHead(204).end();
-    return;
-  }
-
-  if (url.pathname === "/__fixture/unsafe-safe-swap" && request.method === "POST") {
-    const body = /** @type {{state?: "mounted" | "open-handles"}} */ (await readJson(request));
-    broadcastUnsafeSafeSwap(body.state ?? "mounted");
-    response.writeHead(204).end();
-    return;
-  }
-
-  if (url.pathname === "/__fixture/safe-swap-gap" && request.method === "POST") {
-    completeSafeSwapWithGap();
-    response.writeHead(204).end();
-    return;
-  }
-
-  if (url.pathname === "/__fixture/new-authority-recording" && request.method === "POST") {
-    startNewAuthorityRecording();
-    response.writeHead(204).end();
-    return;
-  }
-
-  if (url.pathname === "/__fixture/stale-safe-swap" && request.method === "POST") {
-    if (fixture.staleSafeSwapEvent) {
-      broadcastEvent(fixture.staleSafeSwapEvent);
-    }
+  if (url.pathname === "/__fixture/frozen-safe-swap" && request.method === "POST") {
+    broadcastFrozenSafeSwap();
     response.writeHead(204).end();
     return;
   }
@@ -1469,8 +1362,8 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/__fixture/interrupted-capture" && request.method === "POST") {
-    setInterrupted();
+  if (url.pathname === "/__fixture/frozen-interrupted-outcome" && request.method === "POST") {
+    setFrozenInterruptedOutcome();
     response.writeHead(204).end();
     return;
   }
@@ -1902,10 +1795,13 @@ const server = createServer(async (request, response) => {
 
   if (url.pathname === "/api/v4/capture/stop" && request.method === "POST") {
     const body = /** @type {{schema?: string, reason?: string}} */ (await readJson(request));
+    if (apiRequest) {
+      apiRequest.body = redactSecrets(body);
+    }
     if (
       !request.headers["idempotency-key"] ||
       body.schema !== "ylx.capture-stop.v2" ||
-      !["user", "safe_swap"].includes(body.reason ?? "")
+      body.reason !== "user"
     ) {
       sendJson(response, 400, {
         schema: "ylx.api-error.v2",
@@ -1943,12 +1839,10 @@ const server = createServer(async (request, response) => {
     setFinalizing();
     sendJson(response, 202, fixture.snapshot);
     broadcastSnapshot();
-    if (body.reason === "user") {
-      setTimeout(() => {
-        setIdleAfterUserStop();
-        broadcastSnapshot();
-      }, 80);
-    }
+    setTimeout(() => {
+      setIdleAfterUserStop();
+      broadcastSnapshot();
+    }, 80);
     return;
   }
 
@@ -1971,23 +1865,6 @@ const server = createServer(async (request, response) => {
       return;
     }
     sendJson(response, 200, sessionsSnapshot);
-    return;
-  }
-
-  if (url.pathname === "/api/v4/capture/safe-swap") {
-    if (fixture.safeSwapResource) {
-      sendJson(response, 200, fixture.safeSwapResource);
-      return;
-    }
-    sendJson(response, 404, {
-      schema: "ylx.api-error.v2",
-      error: {
-        code: "safe_swap_receipt_not_found",
-        message: "当前没有安全换盘回执",
-        request_id: "dd268911-b58f-46ef-8670-ae98239c2a33",
-        retryable: false,
-      },
-    });
     return;
   }
 

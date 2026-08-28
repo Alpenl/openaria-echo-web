@@ -494,12 +494,6 @@ a:hover {
   white-space: nowrap;
 }
 
-.tag[data-recoverable="false"] {
-  color: var(--ink);
-  border-color: var(--fault);
-  background-image: var(--hatch);
-}
-
 /* -------------------------------------------------------------- 左侧浮层 */
 
 .stage-left {
@@ -1689,18 +1683,6 @@ a:hover {
   color: var(--ink-3);
   border-color: var(--hairline);
   cursor: not-allowed;
-}
-
-/* 危险确认：斜纹底 + 红边，和危险带用同一套编码，不新造第二种警示语汇。 */
-.network-risk {
-  margin: 0 14px 14px;
-  padding: 10px 12px;
-  background-image: var(--hatch);
-  border: 1px solid var(--fault);
-  border-radius: 2px;
-  font-size: 13px;
-  color: var(--ink);
-  text-wrap: pretty;
 }
 
 #network-command,

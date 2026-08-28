@@ -10,6 +10,7 @@ import type {
   SessionList,
 } from "../api/types";
 import {
+  canAppendSessionPage,
   initialState,
   reduceState,
   shouldAnnounceRetainedDiagnostics,
@@ -39,6 +40,18 @@ const UUID_V4 =
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
+function isSessionCatalogChanged(error: unknown): boolean {
+  return error instanceof DeviceApiError && error.status === 409 && error.code === "catalog_changed";
+}
+
+function isSessionVolumeUnavailable(error: unknown): boolean {
+  return (
+    error instanceof DeviceApiError &&
+    error.status === 409 &&
+    error.code === "volume_not_mounted"
+  );
 }
 
 function sealedTerminalSessionId(
@@ -221,18 +234,7 @@ export class EchoStore {
   };
 
   private async listSessions(cursor: string | null): Promise<SessionList> {
-    try {
-      return await deviceApi.listSessions({ limit: SESSION_PAGE_SIZE, cursor });
-    } catch (error) {
-      if (
-        error instanceof DeviceApiError &&
-        error.status === 409 &&
-        error.code === "volume_not_mounted"
-      ) {
-        return { items: [], diagnostics: [], next_cursor: null };
-      }
-      throw error;
-    }
+    return deviceApi.listSessions({ limit: SESSION_PAGE_SIZE, cursor });
   }
 
   refreshSessions = async (): Promise<void> => {
@@ -274,8 +276,12 @@ export class EchoStore {
           const sessions = await this.listSessions(null);
           this.dispatch({ type: "sessions.loaded", payload: sessions, append: false });
         } catch (error) {
-          console.warn(error);
-          this.dispatch({ type: "sessions.failed" });
+          if (isSessionVolumeUnavailable(error)) {
+            this.dispatch({ type: "sessions.unavailable" });
+          } else {
+            console.warn(error);
+            this.dispatch({ type: "sessions.failed" });
+          }
         }
       } while (this.sessionsRefreshDirty);
     } finally {
@@ -316,10 +322,24 @@ export class EchoStore {
     }
     this.dispatch({ type: "sessions.pending" });
     this.sessionsRefresh = this.listSessions(nextCursor)
-      .then((sessions) => this.dispatch({ type: "sessions.loaded", payload: sessions, append: true }))
+      .then((sessions) => {
+        if (!canAppendSessionPage(this.state.sessions, sessions)) {
+          this.dispatch({ type: "sessions.invalidated" });
+          this.sessionsRefreshDirty = true;
+          return;
+        }
+        this.dispatch({ type: "sessions.loaded", payload: sessions, append: true });
+      })
       .catch((error) => {
-        console.warn(error);
-        this.dispatch({ type: "sessions.failed" });
+        if (isSessionCatalogChanged(error)) {
+          this.dispatch({ type: "sessions.invalidated" });
+          this.sessionsRefreshDirty = true;
+        } else if (isSessionVolumeUnavailable(error)) {
+          this.dispatch({ type: "sessions.unavailable" });
+        } else {
+          console.warn(error);
+          this.dispatch({ type: "sessions.failed" });
+        }
       })
       .finally(() => {
         this.sessionsRefresh = null;
@@ -390,7 +410,7 @@ export class EchoStore {
     this.dispatch({ type: "command.pending" });
     try {
       const beforeStop = this.state.capture;
-      const capture = await deviceApi.stopCapture("user");
+      const capture = await deviceApi.stopCapture();
       if (capture) {
         this.dispatch({ type: "capture.snapshot", payload: capture });
       }
@@ -517,17 +537,14 @@ export class EchoStore {
   private rejectNetworkCommand(
     operation: "apply" | "retry" | "forget",
     error: unknown,
-    outcomeMayBeUnknown: boolean,
   ): void {
-    if (outcomeMayBeUnknown && !(error instanceof DeviceApiError)) {
-      this.dispatch({
-        type: "network.command.indeterminate",
-        operation,
-        error: {
-          code: "network_outcome_indeterminate",
-          message: "连接在事务回执前中断；重新连接后将从设备权威状态对账",
-        },
-      });
+    if (!(error instanceof DeviceApiError)) {
+      const disconnectedError = {
+        code: "network_command_disconnected",
+        message: "设备未返回明确的网络命令结果；本次操作已失败，连接设备后可重新发起",
+      };
+      this.dispatch({ type: "network.command.failed", operation, error: disconnectedError });
+      this.dispatch({ type: "connection.failed", error: disconnectedError });
       return;
     }
     this.dispatch({ type: "network.command.failed", operation, error: visibleError(error) });
@@ -542,7 +559,6 @@ export class EchoStore {
       return;
     }
     this.dispatch({ type: "network.command.pending", operation: "apply" });
-    let mutationSubmitted = false;
     try {
       let credentialRef: string | undefined;
       if (request.security !== "open") {
@@ -566,11 +582,10 @@ export class EchoStore {
         wifi_client: wifiClient,
         ethernet: null,
       };
-      mutationSubmitted = true;
       const receipt = await deviceApi.applyNetwork(desired);
       this.acceptNetworkReceipt("apply", receipt);
     } catch (error) {
-      this.rejectNetworkCommand("apply", error, mutationSubmitted);
+      this.rejectNetworkCommand("apply", error);
     }
   };
 
@@ -588,7 +603,7 @@ export class EchoStore {
       const receipt = await deviceApi.applyNetwork(desired);
       this.acceptNetworkReceipt("apply", receipt);
     } catch (error) {
-      this.rejectNetworkCommand("apply", error, true);
+      this.rejectNetworkCommand("apply", error);
     }
   };
 
@@ -601,7 +616,7 @@ export class EchoStore {
       const receipt = await deviceApi.retryNetwork(transactionId);
       this.acceptNetworkReceipt("retry", receipt);
     } catch (error) {
-      this.rejectNetworkCommand("retry", error, true);
+      this.rejectNetworkCommand("retry", error);
     }
   };
 
@@ -614,7 +629,7 @@ export class EchoStore {
       const receipt = await deviceApi.forgetNetwork();
       this.acceptNetworkReceipt("forget", receipt);
     } catch (error) {
-      this.rejectNetworkCommand("forget", error, true);
+      this.rejectNetworkCommand("forget", error);
     }
   };
 
@@ -652,11 +667,6 @@ export class EchoStore {
           this.scheduleSealedSessionRefresh(stoppedSessionId);
         }
       }
-      return;
-    }
-    // D-049 keeps the event discriminator wire-compatible, but Echo does not mount
-    // the removable-media workflow or reconcile its receipt resource.
-    if (event.type === "safe_swap") {
       return;
     }
     const current = this.state.capture;
