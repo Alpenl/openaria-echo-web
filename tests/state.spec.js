@@ -3,13 +3,19 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
-import { API_ROOT, DEVICE_API_CONSUMER_SUPPORT, deviceApi } from "../src/api/client.ts";
+import {
+  API_ROOT,
+  DEVICE_API_CONSUMER_SUPPORT,
+  DeviceApiError,
+  deviceApi,
+} from "../src/api/client.ts";
 import {
   isNetworkCredentialReceipt,
   isNetworkStatus,
   isNetworkTransactionReceipt,
 } from "../src/api/network.ts";
 import { initialState, reduceState } from "../src/state/reducer.ts";
+import { EchoStore } from "../src/state/store.ts";
 import { fitPeakingDimensions } from "../src/ui/FocusPeaking.tsx";
 
 const authorityEpoch = "4fa85f64-5717-4562-b3fc-2c963f66afa6";
@@ -29,8 +35,8 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "f1185da08f50857d1f231701d14dfc42ab5cf3f6abce65d5d6d5c90510a52210",
-    bytes: 120760,
+    sha256: "b6f3c677c038e55c03581c587973811b0aa2dc91cfb8b602a95128fbac225827",
+    bytes: 124739,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",
@@ -48,6 +54,295 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   expect(consumerSupportManifest.required_contracts).toEqual([v4Contract]);
   expect(deviceApi.artifactUrl("session", "artifact")).toBe(
     "/api/v4/sessions/session/artifacts/artifact",
+  );
+});
+
+const catalogRevisionA = `sha256:${"1".repeat(64)}`;
+const catalogRevisionB = `sha256:${"2".repeat(64)}`;
+
+/** @param {string} sessionId @param {string} takeId */
+function sessionSummary(sessionId, takeId) {
+  return {
+    session_id: sessionId,
+    producer_outcome: "sealed",
+    take_id: takeId,
+    take_sequence: 1,
+    continuation_of: null,
+    display_name: `会话-${sessionId.slice(-2)}`,
+    device: {
+      device_id: "a7d9b620-987b-4d35-89c1-5511f8036aed",
+      device_label: "YLX-A1B2C3D4",
+    },
+    started_at: "2026-08-12T01:00:00Z",
+    ended_at: "2026-08-12T01:00:01Z",
+    duration_seconds: 1,
+    total_bytes: 1024,
+    verification: {
+      actor: "gateway",
+      validator: {
+        name: "rp-ylx-session-validator",
+        version: "0.5.0",
+        build_sha256: "d".repeat(64),
+      },
+      manifest_sha256: "e".repeat(64),
+      verified_at: "2026-08-12T01:00:02Z",
+      verdict: "usable",
+      diagnostics: [],
+    },
+  };
+}
+
+/**
+ * @param {Array<{status?: number, body: unknown} | unknown>} responses
+ * @param {(requests: URL[]) => Promise<void>} task
+ */
+async function withMockedJsonFetch(responses, task) {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  let index = 0;
+  globalThis.fetch = async (input) => {
+    requests.push(new URL(String(input), "http://echo.test"));
+    const configured = responses[index++];
+    if (configured === undefined) {
+      throw new Error("unexpected fetch");
+    }
+    const response =
+      typeof configured === "object" &&
+      configured !== null &&
+      "body" in configured &&
+      ("status" in configured || Object.keys(configured).length === 1)
+        ? configured
+        : { body: configured };
+    return new Response(JSON.stringify(response.body), {
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    await task(requests);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test("session list decoder accepts exact frozen v2 and current v3 envelopes", async () => {
+  const v2 = { schema: "ylx.session-list.v2", items: [], diagnostics: [], next_cursor: null };
+  const v3 = {
+    schema: "ylx.session-list.v3",
+    catalog_revision: catalogRevisionA,
+    items: [],
+    diagnostics: [],
+    next_cursor: null,
+  };
+
+  await withMockedJsonFetch([v2, v3], async () => {
+    await expect(deviceApi.listSessions()).resolves.toEqual(v2);
+    await expect(deviceApi.listSessions()).resolves.toEqual(v3);
+  });
+});
+
+test("session list decoder rejects unknown tags and non-closed v2/v3 shapes", async () => {
+  const unknown = {
+    schema: "ylx.session-list.v4",
+    catalog_revision: catalogRevisionA,
+    items: [],
+    diagnostics: [],
+    next_cursor: null,
+  };
+  const v2WithV3Field = {
+    schema: "ylx.session-list.v2",
+    catalog_revision: catalogRevisionA,
+    items: [],
+    diagnostics: [],
+    next_cursor: null,
+  };
+  const invalidV3Diagnostic = {
+    schema: "ylx.session-list.v3",
+    catalog_revision: catalogRevisionA,
+    items: [],
+    diagnostics: [
+      {
+        quarantine_id: "e4a4a3ca-568f-4b70-b68d-b36ffbd88602",
+        code: "manifest_unreadable",
+        observed_at: "2026-08-12T01:20:00Z",
+        message: "invalid extra field",
+        path: "/secret/device/path",
+      },
+    ],
+    next_cursor: null,
+  };
+
+  await withMockedJsonFetch([unknown, v2WithV3Field, invalidV3Diagnostic], async () => {
+    for (const expectedSchema of [
+      "ylx.session-list.v4",
+      "ylx.session-list.v2",
+      "ylx.session-list.v3",
+    ]) {
+      await expect(deviceApi.listSessions()).rejects.toMatchObject({
+        name: "DeviceApiError",
+        code: "unsupported_device_api_schema",
+        details: { schema: expectedSchema },
+      });
+    }
+  });
+});
+
+test("v4 device capabilities advertise the complete frozen session surface", async () => {
+  const descriptor = {
+    schema: "ylx.device.v4",
+    device: {
+      device_id: "a7d9b620-987b-4d35-89c1-5511f8036aed",
+      device_label: "YLX-A1B2C3D4",
+    },
+    hardware_fingerprint: `sha256:${"a".repeat(64)}`,
+    api_version: "4.0",
+    build: { package_version: "0.5.0", commit: "b".repeat(40), build_id: "test" },
+    security_profile: "lab",
+    capabilities: {
+      capture: true,
+      preview: true,
+      range_download: true,
+      network_mutation: false,
+      session_list: true,
+      session_detail: true,
+      artifact_download: true,
+      capture_status: true,
+      session_deletion: false,
+      calibration_capture: {
+        supported: true,
+        enabled: true,
+        disabled_reason: null,
+        required_video_layout: "split-eyes",
+      },
+    },
+    storage: {
+      volume_id: "6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      total_bytes: 1024,
+      available_bytes: 512,
+      writable: true,
+    },
+    runtime: {},
+  };
+
+  await withMockedJsonFetch([descriptor, { ...descriptor, capabilities: { ...descriptor.capabilities, session_deletion: true } }], async () => {
+    await expect(deviceApi.getDevice()).resolves.toEqual(descriptor);
+    await expect(deviceApi.getDevice()).rejects.toMatchObject({
+      name: "DeviceApiError",
+      code: "unsupported_device_api_schema",
+    });
+  });
+});
+
+test("pagination drops a mismatched catalog and restarts without a cursor", async () => {
+  const first = sessionSummary(
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617286",
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617287",
+  );
+  const staleNext = sessionSummary(
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617288",
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617289",
+  );
+  const fresh = sessionSummary(
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617290",
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617291",
+  );
+  const store = new EchoStore();
+
+  await withMockedJsonFetch(
+    [
+      {
+        schema: "ylx.session-list.v3",
+        catalog_revision: catalogRevisionA,
+        items: [first],
+        diagnostics: [],
+        next_cursor: "cursor-a",
+      },
+      {
+        schema: "ylx.session-list.v3",
+        catalog_revision: catalogRevisionB,
+        items: [staleNext],
+        diagnostics: [],
+        next_cursor: null,
+      },
+      {
+        schema: "ylx.session-list.v3",
+        catalog_revision: catalogRevisionB,
+        items: [fresh],
+        diagnostics: [],
+        next_cursor: null,
+      },
+    ],
+    async (requests) => {
+      await store.refreshSessions();
+      await store.loadMoreSessions();
+
+      expect(store.getState().sessions.items.map((item) => item.session_id)).toEqual([
+        fresh.session_id,
+      ]);
+      expect(store.getState().sessions.catalogRevision).toBe(catalogRevisionB);
+      expect(requests.map((request) => request.searchParams.get("cursor"))).toEqual([
+        null,
+        "cursor-a",
+        null,
+      ]);
+    },
+  );
+});
+
+test("catalog_changed invalidates accumulated pages before a fresh request", async () => {
+  const first = sessionSummary(
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617286",
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617287",
+  );
+  const fresh = sessionSummary(
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617290",
+    "01989f6a-2c00-7a1b-8c2d-3e4f50617291",
+  );
+  const store = new EchoStore();
+
+  await withMockedJsonFetch(
+    [
+      {
+        schema: "ylx.session-list.v3",
+        catalog_revision: catalogRevisionA,
+        items: [first],
+        diagnostics: [],
+        next_cursor: "cursor-a",
+      },
+      {
+        status: 409,
+        body: {
+          schema: "ylx.api-error.v2",
+          error: {
+            code: "catalog_changed",
+            message: "catalog changed",
+            request_id: "962f25f5-c8f1-42cb-a598-4143a806d89f",
+            retryable: true,
+            details: { catalog_revision: catalogRevisionB },
+          },
+        },
+      },
+      {
+        schema: "ylx.session-list.v3",
+        catalog_revision: catalogRevisionB,
+        items: [fresh],
+        diagnostics: [],
+        next_cursor: null,
+      },
+    ],
+    async (requests) => {
+      await store.refreshSessions();
+      await store.loadMoreSessions();
+
+      expect(store.getState().sessions.items.map((item) => item.session_id)).toEqual([
+        fresh.session_id,
+      ]);
+      expect(requests.map((request) => request.searchParams.get("cursor"))).toEqual([
+        null,
+        "cursor-a",
+        null,
+      ]);
+    },
   );
 });
 
@@ -283,6 +578,44 @@ test("deviceApi public export is runtime immutable", () => {
         },
       });
     }
+  }
+});
+
+test("D-049 client surface has no safe-swap request or stop reason input", () => {
+  expect("getSafeSwap" in deviceApi).toBe(false);
+  expect(deviceApi.stopCapture.length).toBe(0);
+});
+
+test("network mutation without an explicit response fails and disconnects", async () => {
+  const originalFetch = globalThis.fetch;
+  const mutableStatus = networkStatus(2);
+  mutableStatus.mutation_capability = {
+    ...mutableStatus.mutation_capability,
+    enabled: true,
+    disabled_reason: null,
+  };
+  globalThis.fetch = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+
+  try {
+    const echoStore = new EchoStore();
+    echoStore.dispatch({ type: "network.loaded", payload: mutableStatus });
+
+    await echoStore.applyHotspot();
+
+    expect(echoStore.getState().networkCommand).toEqual({
+      operation: "apply",
+      phase: "failed",
+      transactionId: null,
+    });
+    expect(echoStore.getState().connection).toBe("disconnected");
+    expect(echoStore.getState().error).toEqual({
+      code: "network_command_disconnected",
+      message: "设备未返回明确的网络命令结果；本次操作已失败，连接设备后可重新发起",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

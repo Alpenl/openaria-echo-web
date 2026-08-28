@@ -30,7 +30,7 @@ const DISABLED_REASON_LABELS: Record<string, string> = {
   network_manager_unavailable: "NetworkManager 不可用",
   rescue_ap_not_validated: "设备热点尚未验证",
   capture_active: "录制期间不可修改网络",
-  recovery_required: "需要先完成网络恢复",
+  recovery_required: "网络修改暂不可用",
   maintenance_window_closed: "网络维护窗口已关闭",
   unsupported_concurrency: "无线硬件不支持当前模式",
 };
@@ -744,11 +744,6 @@ export function NetworkControl({ state }: { state: AppState }) {
         </dl>
       </details>
 
-      {state.networkCommand.phase === "indeterminate" ? (
-        <p class="network-risk" role="status">
-          连接结果待确认；恢复连接后以设备状态为准。
-        </p>
-      ) : null}
     </section>
   );
 }

@@ -74,8 +74,12 @@ src/
 - **SSE 只是传输**：`sse_delivery_id` 不是修订号；只有严格 +1 的快照走快路径，其余一律
   回到 HTTP 权威快照重取。
 - **D-049 固定存储边界**：当前网页不提供可移除介质、存储选择或安全换盘，不请求
-  `/capture/safe-swap`，也不投影 frozen safe-swap SSE。API 类型与 client method 只为 exact wire
-  compatibility 保留，不能据此恢复产品入口。
+  `/capture/safe-swap`，停止录制只发送普通用户停止原因。冻结的 safe-swap SSE 只在传输解码边界
+  被丢弃，不进入 UI、状态、store 或任何后续请求。
+- **网络命令失败闭合**：mutation 未收到设备明确响应时立即记为失败并标记断线，不创建
+  `indeterminate` 状态，也不在恢复连接后对账或续接该操作；用户可重新发起一个完整的新命令。
+- **冻结失败状态不升级为产品能力**：旧 wire 中的 `recoverable` 只作为未成功历史兼容读取，
+  页面不把它显示为可恢复任务，也不提供 salvage、续接或中断恢复动作。
 - **生产方声明与消费方判断分开显示**：`producer_outcome = sealed` 只证明生产方自洽；
   能否消费由 gateway 对当前字节独立判定。只有判为 usable 的不可变快照才出现下载入口。
 - **持久历史不当新告警**：只有本页亲眼看到活动录制转入未成功终态时才播报它的诊断，

@@ -18,6 +18,7 @@ import {
   isNetworkStatus,
   isNetworkTransactionReceipt,
 } from "./network";
+import { isSessionList } from "./sessions";
 
 export const API_ROOT = "/api/v4";
 export const DEVICE_API_CONSUMER_SUPPORT = {
@@ -29,8 +30,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "f1185da08f50857d1f231701d14dfc42ab5cf3f6abce65d5d6d5c90510a52210",
-      bytes: 120760,
+      sha256: "b6f3c677c038e55c03581c587973811b0aa2dc91cfb8b602a95128fbac225827",
+      bytes: 124739,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -71,6 +72,11 @@ const CAPABILITY_KEYS = new Set([
   "preview",
   "range_download",
   "network_mutation",
+  "session_list",
+  "session_detail",
+  "artifact_download",
+  "capture_status",
+  "session_deletion",
   "calibration_capture",
 ]);
 const CALIBRATION_CAPABILITY_KEYS = new Set([
@@ -107,7 +113,12 @@ function assertSupportedCapabilities(device: DeviceDescriptor): void {
     typeof capabilities.capture === "boolean" &&
     typeof capabilities.preview === "boolean" &&
     capabilities.range_download === true &&
-    typeof capabilities.network_mutation === "boolean";
+    typeof capabilities.network_mutation === "boolean" &&
+    capabilities.session_list === true &&
+    capabilities.session_detail === true &&
+    capabilities.artifact_download === true &&
+    capabilities.capture_status === true &&
+    capabilities.session_deletion === false;
   const calibrationValid =
     closedCalibration &&
     typeof calibration.supported === "boolean" &&
@@ -122,7 +133,7 @@ function assertSupportedCapabilities(device: DeviceDescriptor): void {
       "Device API capabilities 不符合 v4 契约",
       502,
       "unsupported_device_api_schema",
-      { field: "capabilities.calibration_capture" },
+      { field: "capabilities" },
     );
   }
 }
@@ -212,6 +223,21 @@ function assertNetworkReceipt(receipt: unknown): NetworkTransactionReceipt {
     );
   }
   return receipt;
+}
+
+function assertSessionList(sessions: unknown): SessionList {
+  if (!isSessionList(sessions)) {
+    const envelope = sessions as { schema?: unknown } | null;
+    throw new DeviceApiError(
+      "Device API session list 不符合冻结的 v2/v3 契约",
+      502,
+      "unsupported_device_api_schema",
+      {
+        schema: typeof envelope?.schema === "string" ? envelope.schema : null,
+      },
+    );
+  }
+  return sessions;
 }
 
 export async function makeApiError(response: Response): Promise<DeviceApiError> {
@@ -364,8 +390,6 @@ export interface ListSessionsQuery {
 export const deviceApi = Object.freeze({
   getDevice: () => requestJson<DeviceDescriptor>("/device").then(assertSupportedDevice),
   getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status").then(assertCaptureStatus),
-  getSafeSwap: () =>
-    requestOptionalJson<{ schema: string; receipt: unknown }>("/capture/safe-swap"),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),
   getNetwork: () => requestOptionalJson<unknown>("/network").then(assertNetworkStatus),
   scanNetworks: () => requestJson<unknown>("/network/scan").then(assertNetworkScan),
@@ -409,7 +433,7 @@ export const deviceApi = Object.freeze({
     if (cursor) {
       query.set("cursor", cursor);
     }
-    return requestJson<SessionList>(`/sessions?${query.toString()}`);
+    return requestJson<unknown>(`/sessions?${query.toString()}`).then(assertSessionList);
   },
   getSession: (sessionId: string) =>
     requestJson<SessionDetail>(`/sessions/${encodeURIComponent(sessionId)}`),
@@ -434,10 +458,10 @@ export const deviceApi = Object.freeze({
       }),
     ).then(assertCaptureStatus);
   },
-  stopCapture: (reason: "user" | "safe_swap") =>
+  stopCapture: () =>
     requestJson<CaptureStatus>(
       "/capture/stop",
-      commandInit({ schema: "ylx.capture-stop.v2", reason }),
+      commandInit({ schema: "ylx.capture-stop.v2", reason: "user" }),
     ).then(assertCaptureStatus),
   setCameraFocus: (request: { value?: number; auto_enabled?: boolean }) =>
     requestJson<CameraFocusStatus>(

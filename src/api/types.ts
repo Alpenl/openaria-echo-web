@@ -87,8 +87,13 @@ export interface CalibrationCaptureCapability {
 export interface DeviceCapabilities {
   capture: boolean;
   preview: boolean;
-  range_download: boolean;
+  range_download: true;
   network_mutation: boolean;
+  session_list: true;
+  session_detail: true;
+  artifact_download: true;
+  capture_status: true;
+  session_deletion: false;
   calibration_capture: CalibrationCaptureCapability;
 }
 
@@ -164,45 +169,44 @@ export interface CaptureStatus {
   snapshot: CaptureSnapshot;
 }
 
-export interface SafeSwapReceipt {
-  schema: "ylx.safe-swap-receipt.v3";
-  session_id: string;
-  volume_id: string;
-  generation_id: string;
-  manifest_id: string;
-  manifest_sha256: string;
-  sealed_at: string;
-  released_at: string;
-  release_state: "unmounted" | "device-released";
-  open_handle_count: 0;
-}
-
-export interface SafeSwapState {
-  receipt: SafeSwapReceipt;
-  authorityEpoch: string;
-  sourceRevision: number;
-}
-
 /** 生产方自洽声明与消费方独立判断是两件事，列表里分开投影，绝不合并成一个状态。 */
-export interface SessionVerification {
-  actor?: string;
-  validator?: { name: string; version: string; build_sha256: string };
-  manifest_sha256?: string;
-  verified_at?: string;
+export interface SessionVerificationBase {
+  actor: "gateway";
+  validator: { name: string; version: string; build_sha256: string };
+  manifest_sha256: string;
+  verified_at: string;
   verdict: "usable" | "unusable";
-  diagnostics: unknown[];
 }
+
+export interface LegacySessionVerification extends SessionVerificationBase {
+  diagnostics: string[];
+}
+
+export interface SessionVerificationDiagnostic {
+  code:
+    | "artifact_digest_mismatch"
+    | "artifact_invalid"
+    | "manifest_invalid"
+    | "verification_failed";
+  summary: string;
+}
+
+export interface CurrentSessionVerification extends SessionVerificationBase {
+  diagnostics: SessionVerificationDiagnostic[];
+}
+
+export type SessionVerification = LegacySessionVerification | CurrentSessionVerification;
 
 export interface SessionSummary {
   session_id: string;
-  producer_outcome: string;
-  take_id?: string;
-  take_sequence?: number;
-  continuation_of?: string | null;
+  producer_outcome: "sealed";
+  take_id: string;
+  take_sequence: number;
+  continuation_of: string | null;
   display_name: string;
-  device?: DeviceIdentity;
-  started_at?: string;
-  ended_at?: string;
+  device: DeviceIdentity;
+  started_at: string;
+  ended_at: string;
   duration_seconds: number;
   total_bytes: number;
   verification: SessionVerification | null;
@@ -210,17 +214,27 @@ export interface SessionSummary {
 
 export interface SessionListDiagnostic {
   quarantine_id: string;
-  code: string;
+  code: "manifest_unreadable" | "unsupported_schema" | "manifest_invalid" | "manifest_not_sealed";
   observed_at: string;
   message: string;
 }
 
-export interface SessionList {
-  schema?: string;
+export interface SessionListV2 {
+  schema: "ylx.session-list.v2";
   items: SessionSummary[];
   diagnostics: SessionListDiagnostic[];
   next_cursor: string | null;
 }
+
+export interface SessionListV3 {
+  schema: "ylx.session-list.v3";
+  catalog_revision: string;
+  items: SessionSummary[];
+  diagnostics: SessionListDiagnostic[];
+  next_cursor: string | null;
+}
+
+export type SessionList = SessionListV2 | SessionListV3;
 
 /** manifest 里的 artifact 条目；Range 下载按 artifact_id 寻址，不按 path 猜角色。 */
 export interface SessionArtifact {
@@ -506,7 +520,7 @@ export interface CaptureStateEventPayload {
 
 export type CaptureEvent = {
   schema: "ylx.capture-event.v4";
-  type: "snapshot" | "progress" | "diagnostic" | "safe_swap" | "state";
+  type: "snapshot" | "progress" | "diagnostic" | "state";
   sse_delivery_id: string;
   authority_epoch: string;
   source_revision: number;

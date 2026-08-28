@@ -42,9 +42,6 @@ export function Alerts({ state }: { state: AppState }) {
         <div class="alert" role="alert" key={`${diagnostic.code}|${diagnostic.at}`}>
           <code>{diagnostic.code}</code>
           <span>{diagnostic.message}</span>
-          <span class="tag" data-recoverable={String(diagnostic.recoverable)}>
-            {diagnostic.recoverable ? "recoverable" : "not recoverable"}
-          </span>
           {/* 诊断 details 原样呈现：设备说了什么就显示什么，不做二次解读。 */}
           {diagnostic.details && Object.keys(diagnostic.details).length > 0 ? (
             <pre>{JSON.stringify(diagnostic.details)}</pre>

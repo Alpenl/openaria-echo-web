@@ -9,6 +9,8 @@ import type {
   NetworkTransactionReceipt,
   SessionDetail,
   SessionList,
+  SessionListDiagnostic,
+  SessionSummary,
   UnsuccessfulOutcome,
 } from "../api/types";
 
@@ -17,7 +19,7 @@ export type InspectMode = "both" | "left" | "right";
 export type PanelId = "none" | "sessions" | "device" | "network";
 export type SessionFilter = "all" | "usable" | "unsuccessful";
 export type NetworkOperation = "apply" | "retry" | "forget";
-export type NetworkCommandPhase = "idle" | "submitting" | "accepted" | "indeterminate" | "failed";
+export type NetworkCommandPhase = "idle" | "submitting" | "accepted" | "failed";
 
 export interface FocusPeakingState {
   enabled: boolean;
@@ -31,8 +33,10 @@ export interface VisibleError {
 }
 
 export interface SessionsState {
-  items: SessionList["items"];
-  diagnostics: SessionList["diagnostics"];
+  items: SessionSummary[];
+  diagnostics: SessionListDiagnostic[];
+  wireSchema: SessionList["schema"] | null;
+  catalogRevision: string | null;
   nextCursor: string | null;
   loading: boolean;
   loadedOnce: boolean;
@@ -93,12 +97,13 @@ export type Action =
       operation: NetworkOperation;
       payload: NetworkTransactionReceipt;
     }
-  | { type: "network.command.indeterminate"; operation: NetworkOperation; error: VisibleError }
   | { type: "network.command.failed"; operation: NetworkOperation; error: VisibleError }
   | { type: "error.cleared" }
   | { type: "sessions.pending" }
   | { type: "sessions.loaded"; payload: SessionList; append: boolean }
   | { type: "sessions.failed" }
+  | { type: "sessions.invalidated" }
+  | { type: "sessions.unavailable" }
   | { type: "sessions.query"; query: string }
   | { type: "sessions.filter"; filter: SessionFilter }
   | { type: "session.opened"; sessionId: string }
@@ -129,6 +134,8 @@ export const initialState: AppState = {
   sessions: {
     items: [],
     diagnostics: [],
+    wireSchema: null,
+    catalogRevision: null,
     nextCursor: null,
     loading: false,
     loadedOnce: false,
@@ -173,6 +180,31 @@ function clampPeakingThreshold(threshold: number): number {
     return initialState.focusPeaking.threshold;
   }
   return Math.min(255, Math.max(0, Math.round(threshold)));
+}
+
+export function canAppendSessionPage(current: SessionsState, page: SessionList): boolean {
+  if (!current.loadedOnce || current.wireSchema !== page.schema) {
+    return false;
+  }
+  return page.schema === "ylx.session-list.v3"
+    ? current.catalogRevision === page.catalog_revision
+    : current.catalogRevision === null;
+}
+
+function invalidatedSessionsState(
+  current: SessionsState,
+  loadedOnce: boolean,
+): SessionsState {
+  return {
+    ...current,
+    items: [],
+    diagnostics: [],
+    wireSchema: null,
+    catalogRevision: null,
+    nextCursor: null,
+    loading: false,
+    loadedOnce,
+  };
 }
 
 export function reduceState(state: AppState, action: Action): AppState {
@@ -268,16 +300,6 @@ export function reduceState(state: AppState, action: Action): AppState {
           transactionId: action.payload.transaction.transaction_id,
         },
       };
-    case "network.command.indeterminate":
-      return {
-        ...state,
-        error: action.error,
-        networkCommand: {
-          operation: action.operation,
-          phase: "indeterminate",
-          transactionId: null,
-        },
-      };
     case "network.command.failed":
       return {
         ...state,
@@ -293,6 +315,12 @@ export function reduceState(state: AppState, action: Action): AppState {
     case "sessions.pending":
       return { ...state, sessions: { ...state.sessions, loading: true } };
     case "sessions.loaded":
+      if (action.append && !canAppendSessionPage(state.sessions, action.payload)) {
+        return {
+          ...state,
+          sessions: invalidatedSessionsState(state.sessions, false),
+        };
+      }
       return {
         ...state,
         sessions: {
@@ -300,14 +328,25 @@ export function reduceState(state: AppState, action: Action): AppState {
           items: action.append
             ? [...state.sessions.items, ...action.payload.items]
             : action.payload.items,
-          diagnostics: action.payload.diagnostics ?? [],
-          nextCursor: action.payload.next_cursor ?? null,
+          diagnostics: action.append
+            ? [...state.sessions.diagnostics, ...action.payload.diagnostics]
+            : action.payload.diagnostics,
+          wireSchema: action.payload.schema,
+          catalogRevision:
+            action.payload.schema === "ylx.session-list.v3"
+              ? action.payload.catalog_revision
+              : null,
+          nextCursor: action.payload.next_cursor,
           loading: false,
           loadedOnce: true,
         },
       };
     case "sessions.failed":
       return { ...state, sessions: { ...state.sessions, loading: false, loadedOnce: true } };
+    case "sessions.invalidated":
+      return { ...state, sessions: invalidatedSessionsState(state.sessions, false) };
+    case "sessions.unavailable":
+      return { ...state, sessions: invalidatedSessionsState(state.sessions, true) };
     case "sessions.query":
       return { ...state, sessions: { ...state.sessions, query: action.query } };
     case "sessions.filter":

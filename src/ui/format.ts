@@ -117,8 +117,8 @@ const DEVICE_STATE_LABELS: Record<string, string> = {
 export const OUTCOME_LABELS: Record<string, string> = {
   abandoned: "已放弃",
   failed: "失败",
-  media_lost: "介质丢失",
-  recoverable: "可恢复失败",
+  media_lost: "录制存储不可用",
+  recoverable: "未成功",
 };
 
 export const CONNECTION_LABELS: Record<string, string> = {
