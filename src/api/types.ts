@@ -93,7 +93,7 @@ export interface DeviceCapabilities {
   session_detail: true;
   artifact_download: true;
   capture_status: true;
-  session_deletion: false;
+  session_deletion: boolean;
   calibration_capture: CalibrationCaptureCapability;
 }
 

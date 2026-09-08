@@ -30,8 +30,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "b6f3c677c038e55c03581c587973811b0aa2dc91cfb8b602a95128fbac225827",
-      bytes: 124739,
+      sha256: "b7b244cc78e923d1582aa3113abc35c1b485503ef3b53c8f818d478a07fb7372",
+      bytes: 128352,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -118,7 +118,7 @@ function assertSupportedCapabilities(device: DeviceDescriptor): void {
     capabilities.session_detail === true &&
     capabilities.artifact_download === true &&
     capabilities.capture_status === true &&
-    capabilities.session_deletion === false;
+    typeof capabilities.session_deletion === "boolean";
   const calibrationValid =
     closedCalibration &&
     typeof calibration.supported === "boolean" &&

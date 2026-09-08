@@ -35,8 +35,8 @@ test("Device API consumer support is v4-only and fail-closed", () => {
   const v4Contract = {
     major: 4,
     path: "openapi/ylx-device-v4.openapi.yaml",
-    sha256: "b6f3c677c038e55c03581c587973811b0aa2dc91cfb8b602a95128fbac225827",
-    bytes: 124739,
+    sha256: "b7b244cc78e923d1582aa3113abc35c1b485503ef3b53c8f818d478a07fb7372",
+    bytes: 128352,
     info_version: "4.0.0",
     server_base_path: "/api/v4",
     lifecycle: "current",
@@ -187,7 +187,7 @@ test("session list decoder rejects unknown tags and non-closed v2/v3 shapes", as
   });
 });
 
-test("v4 device capabilities advertise the complete frozen session surface", async () => {
+test("v4 device capabilities accept optional session deletion support", async () => {
   const descriptor = {
     schema: "ylx.device.v4",
     device: {
@@ -224,8 +224,9 @@ test("v4 device capabilities advertise the complete frozen session surface", asy
     runtime: {},
   };
 
-  await withMockedJsonFetch([descriptor, { ...descriptor, capabilities: { ...descriptor.capabilities, session_deletion: true } }], async () => {
+  await withMockedJsonFetch([descriptor, { ...descriptor, capabilities: { ...descriptor.capabilities, session_deletion: true } }, { ...descriptor, capabilities: { ...descriptor.capabilities, session_deletion: "true" } }], async () => {
     await expect(deviceApi.getDevice()).resolves.toEqual(descriptor);
+    await expect(deviceApi.getDevice()).resolves.toMatchObject({ capabilities: { session_deletion: true } });
     await expect(deviceApi.getDevice()).rejects.toMatchObject({
       name: "DeviceApiError",
       code: "unsupported_device_api_schema",
