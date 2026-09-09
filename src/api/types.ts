@@ -34,7 +34,7 @@ export interface NetworkInterfaceStatus {
 }
 
 export interface LiveImu {
-  session_id: string;
+  session_id: string | null;
   clock: { time_base: "host_monotonic"; timestamp_ns: number };
   raw: { units: "raw_int16"; accelerometer: RawVector3; gyroscope: RawVector3 };
   sync: { quality: "insufficient" | "good" | "degraded" };

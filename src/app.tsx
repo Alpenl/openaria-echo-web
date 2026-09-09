@@ -13,7 +13,7 @@ import { SessionsPanel } from "./ui/SessionsPanel";
 import { Stage, StageOverlays } from "./ui/Stage";
 import { TopBar } from "./ui/TopBar";
 
-const CAPTURE_RECONCILE_INTERVAL_MS = 2000;
+const CAPTURE_RECONCILE_INTERVAL_MS = 500;
 const PANEL_RECONCILE_INTERVAL_MS = 5000;
 
 /**

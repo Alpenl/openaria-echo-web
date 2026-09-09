@@ -1100,6 +1100,9 @@ test("customer 事件流携带令牌并在断线后从权威快照收敛", async
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await expect(page.getByText("另一台手机发起", { exact: true })).toBeVisible();
 
+  // Fast status polling can reconcile before the event stream reconnects.
+  await expect.poll(() => pageEventRequests.length).toBeGreaterThanOrEqual(2);
+
   const response = await request.get("/__fixture/requests");
   const body = /** @type {{requests: Array<{path: string, authorization: string | null, lastEventId: string | null}>}} */ (
     await response.json()

@@ -228,7 +228,7 @@ const makeRuntime = () => ({
     default_route: "none",
   },
   live_imu: {
-    session_id: sessionId,
+    session_id: null,
     clock: {
       time_base: "host_monotonic",
       timestamp_ns: 4_250_000_000,
