@@ -1100,6 +1100,9 @@ test("customer 事件流携带令牌并在断线后从权威快照收敛", async
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await expect(page.getByText("另一台手机发起", { exact: true })).toBeVisible();
 
+  // Fast status polling can reconcile before the event stream reconnects.
+  await expect.poll(() => pageEventRequests.length).toBeGreaterThanOrEqual(2);
+
   const response = await request.get("/__fixture/requests");
   const body = /** @type {{requests: Array<{path: string, authorization: string | null, lastEventId: string | null}>}} */ (
     await response.json()
@@ -1151,7 +1154,8 @@ test("事件流持续断线时禁用写操作且限制重连频率", async ({ pa
   await request.post("/__fixture/config", { data: { eventsUnavailable: true } });
   await request.post("/__fixture/disconnect-events");
 
-  await expect(page.locator(".connection")).toHaveText("连接中断");
+  await expect(page.locator(".connection")).toHaveText("正在连接");
+  await expect(page.locator(".connection")).toHaveText("连接中断", { timeout: 8000 });
   await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
   await expect(page.getByLabel("录制名称")).toBeDisabled();
   const firstResponse = await request.get("/__fixture/requests");
@@ -1179,7 +1183,7 @@ test("事件流重连处理首个权威事件前保持写操作禁用", async ({
   await expect(page.locator(".connection")).toHaveText("已连接");
   await request.post("/__fixture/config", { data: { eventSnapshotDelayMs: 2000 } });
   await request.post("/__fixture/disconnect-events");
-  await expect(page.locator(".connection")).toHaveText("连接中断");
+  await expect(page.locator(".connection")).toHaveText("正在连接");
 
   await expect
     .poll(async () => {
@@ -1188,11 +1192,29 @@ test("事件流重连处理首个权威事件前保持写操作禁用", async ({
       return body.requests.filter((entry) => entry.path === "/api/v4/capture/events").length;
     })
     .toBeGreaterThanOrEqual(2);
-  await expect(page.locator(".connection")).toHaveText("连接中断");
+  await expect(page.locator(".connection")).toHaveText("正在连接");
   await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
 
   await expect(page.locator(".connection")).toHaveText("已连接");
   await expect(page.getByRole("button", { name: "开始录制" })).toBeEnabled();
+});
+
+test("结束录制后的短暂事件流重连不显示断开故障", async ({ page, request }) => {
+  await page.goto("/");
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  await page.getByLabel("录制名称").fill("短暂重连");
+  await page.getByRole("button", { name: "开始录制" }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+
+  await request.post("/__fixture/config", { data: { eventSnapshotDelayMs: 2000 } });
+  await page.getByRole("button", { name: "结束录制" }).click();
+  await request.post("/__fixture/disconnect-events");
+
+  await expect(page.locator(".connection")).toHaveText("正在连接");
+  await expect(page.getByText("事件流断开，命令已封锁")).toHaveCount(0);
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  await expect(page.locator(".connection")).toHaveText("已连接", { timeout: 5000 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 test("事件流 401 停止重连并回到令牌入口", async ({ page, request }) => {

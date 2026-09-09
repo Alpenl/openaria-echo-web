@@ -10,6 +10,8 @@ import { isNetworkEvent } from "./network";
 
 const CAPTURE_EVENT_URL = `${API_ROOT}/capture/events`;
 const NETWORK_EVENT_URL = `${API_ROOT}/network/events`;
+const RECONNECT_DELAY_MS = 1000;
+const DISCONNECTED_GRACE_MS = 5000;
 
 interface SsePayloadIdentity {
   schema?: string;
@@ -69,7 +71,7 @@ function parseEvent<T extends SsePayloadIdentity>(
 export interface FollowCaptureEventsOptions {
   signal: AbortSignal;
   onEvent: (event: CaptureEvent) => Promise<void> | void;
-  onConnection: (state: "connected" | "disconnected") => void;
+  onConnection: (state: "connected" | "connecting" | "disconnected") => void;
   onUnauthorized: (error: DeviceApiError) => void;
 }
 
@@ -82,7 +84,7 @@ export interface FollowNetworkEventsOptions {
 interface FollowEventsOptions<T extends SsePayloadIdentity> {
   signal: AbortSignal;
   onEvent: (event: T) => Promise<void> | void;
-  onConnection?: (state: "connected" | "disconnected") => void;
+  onConnection?: (state: "connected" | "connecting" | "disconnected") => void;
   onUnauthorized: (error: DeviceApiError) => void;
   validatePayload?: (value: unknown) => value is T;
 }
@@ -94,6 +96,7 @@ async function followEvents<T extends SsePayloadIdentity>(
   options: FollowEventsOptions<T>,
 ): Promise<void> {
   let lastEventId: string | null = null;
+  let disconnectedSince: number | null = null;
   while (!options.signal.aborted) {
     try {
       const headers = requestHeaders("text/event-stream");
@@ -133,6 +136,7 @@ async function followEvents<T extends SsePayloadIdentity>(
             await options.onEvent(parsed.payload);
             lastEventId = parsed.id;
             if (!connected) {
+              disconnectedSince = null;
               options.onConnection?.("connected");
               connected = true;
             }
@@ -154,8 +158,13 @@ async function followEvents<T extends SsePayloadIdentity>(
       }
       console.warn(error);
     }
-    options.onConnection?.("disconnected");
-    await waitForAbortableDelay(1000, options.signal);
+    disconnectedSince ??= Date.now();
+    options.onConnection?.(
+      Date.now() - disconnectedSince >= DISCONNECTED_GRACE_MS
+        ? "disconnected"
+        : "connecting",
+    );
+    await waitForAbortableDelay(RECONNECT_DELAY_MS, options.signal);
   }
 }
 
