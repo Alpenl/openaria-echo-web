@@ -23,6 +23,9 @@
   --glass: rgba(8, 10, 11, 0.78);
   --glass-strong: rgba(9, 11, 12, 0.93);
   --glass-panel: rgba(9, 11, 12, 0.88);
+  --deck: #0a0c0d;
+  --panel-bg: #0b0d0e;
+  --ink-4: #5f686c;
   --hairline: rgba(255, 255, 255, 0.1);
   --hairline-2: rgba(255, 255, 255, 0.17);
   --sunken: rgba(255, 255, 255, 0.055);
@@ -124,6 +127,26 @@ a:hover {
   color: var(--ink-3);
 }
 
+/* 面板 section 头部：等宽小标题 + 一根 3px tick，把层级立起来。 */
+.detail-section > .eyebrow:first-child,
+.panel-tools > .eyebrow:first-child {
+  position: relative;
+  display: block;
+  padding-left: 11px;
+  margin-bottom: 2px;
+}
+
+.detail-section > .eyebrow:first-child::before,
+.panel-tools > .eyebrow:first-child::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 3px;
+  height: 11px;
+  background: var(--ink-3);
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -219,94 +242,162 @@ a:hover {
   color: var(--ink-3);
 }
 
+/* 取景框：四边刻度 + 中心十字线，把「这是取景器」讲清楚。 */
+.vf-furniture {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.vf-tick {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.vf-tick[data-edge="top"] {
+  top: 58px;
+  left: 50%;
+  width: 1px;
+  height: 12px;
+}
+
+.vf-tick[data-edge="bottom"] {
+  bottom: 146px;
+  left: 50%;
+  width: 1px;
+  height: 12px;
+}
+
+.vf-tick[data-edge="left"] {
+  left: 32px;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+}
+
+.vf-tick[data-edge="right"] {
+  right: 32px;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+}
+
+.vf-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 1px;
+  margin-left: -10px;
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.vf-reticle::after {
+  content: "";
+  position: absolute;
+  left: 9.5px;
+  top: -9px;
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.26);
+}
+
 /* ------------------------------------------------------------------ 顶栏 */
 
+/* 顶栏：不再是玻璃厚条，而是压最上沿的渐隐信息条，取景画面从下面透出。 */
 .topbar {
   grid-row: 1;
   grid-column: 1;
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 60px;
-  padding: 8px 16px;
-  background: var(--glass);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--hairline);
+  gap: 13px;
+  min-height: 52px;
+  padding: 4px 14px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .brand-mark {
-  width: 20px;
-  height: 20px;
+  width: 12px;
+  height: 12px;
   flex: none;
-  border: 2px solid var(--ink);
+  border: 1.5px solid var(--ink-2);
 }
 
 .brand-label {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
+  color: #edf1f2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* 状态印：左侧 3px 色条 + 标签，取代弱小的方点 chip。 */
 .state-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   flex: none;
-  padding: 3px 11px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 2px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 0 11px 0 13px;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
   white-space: nowrap;
 }
 
 .state-chip::before {
   content: "";
-  width: 8px;
-  height: 8px;
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
   background: var(--ink-3);
 }
 
+.rec-block {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  background: currentColor;
+}
+
 .state-chip[data-state="recording"] {
-  background: var(--record);
-  border-color: var(--record);
-  color: #140604;
-  font-weight: 600;
+  color: var(--record);
 }
 
 .state-chip[data-state="recording"]::before {
-  background: #140604;
+  background: var(--record);
 }
 
 .state-chip[data-state="finalizing"],
 .state-chip[data-state="encoding"],
 .state-chip[data-state="verifying"] {
-  background: var(--caution);
-  border-color: var(--caution);
-  color: #171104;
-  font-weight: 600;
+  color: var(--caution);
 }
 
 .state-chip[data-state="finalizing"]::before,
 .state-chip[data-state="encoding"]::before,
 .state-chip[data-state="verifying"]::before {
-  background: #171104;
+  background: var(--caution);
 }
 
 .state-chip[data-state="blocked"] {
-  border-color: var(--fault);
-  background-image: var(--hatch);
+  color: var(--fault);
 }
 
 .state-chip[data-state="blocked"]::before {
@@ -378,11 +469,11 @@ a:hover {
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   background: transparent;
   border: 1px solid var(--hairline-2);
-  border-radius: 3px;
+  border-radius: 5px;
   color: var(--ink);
 }
 
@@ -398,24 +489,31 @@ a:hover {
 
 /* ------------------------------------------------------------- 危险与诊断 */
 
+/* 危险带：压在顶栏之下的一条细带，斜纹只在最左沿。 */
 .hazard {
   flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 10px 12px;
+  min-height: 38px;
+  padding: 6px 16px 6px 0;
   background: var(--glass-strong);
-  background-image: var(--hatch);
-  border-bottom: 1px solid var(--fault);
+  border-top: 1px solid rgba(255, 59, 45, 0.5);
+  border-bottom: 1px solid rgba(255, 59, 45, 0.5);
   backdrop-filter: blur(12px);
 }
 
 .hazard-mark {
-  width: 12px;
-  height: 20px;
+  width: 14px;
+  align-self: stretch;
+  min-height: 26px;
   flex: none;
-  background: var(--fault);
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 5px,
+    rgba(255, 59, 45, 0.55) 5px 10px
+  );
 }
 
 .hazard-outcome {
@@ -496,95 +594,103 @@ a:hover {
 
 /* -------------------------------------------------------------- 左侧浮层 */
 
+/* 取景浮层随 flex 流排在危险带 / 告警之下，不再绝对定位盖住它们。 */
 .stage-left {
-  position: absolute;
-  left: 16px;
-  top: 16px;
+  align-self: flex-start;
   z-index: 5;
+  margin: 12px 0 0 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
-  max-width: calc(100% - 32px);
+  max-width: calc(100% - 28px);
+}
+
+/* 取景工具收成一排横条：取景切换 + 全画幅 + 峰值对焦。 */
+.vf-tools {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .inspect {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--glass);
   border: 1px solid var(--hairline-2);
-  border-radius: 3px;
+  border-radius: 6px;
   overflow: hidden;
   backdrop-filter: blur(12px);
 }
 
 .inspect button {
-  width: 60px;
-  min-height: 44px;
-  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+  min-height: 38px;
+  padding: 0 12px;
   background: transparent;
   border: 0;
-  border-top: 1px solid var(--hairline-2);
+  border-left: 1px solid var(--hairline);
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .inspect button:first-child {
-  border-top: 0;
+  border-left: 0;
 }
 
 .inspect button[aria-pressed="true"] {
   background: var(--ink);
-  color: #080a0b;
-  font-weight: 600;
+  color: #07090a;
+  font-weight: 700;
 }
 
 .focus-peaking-control {
   display: flex;
   align-items: center;
-  gap: 8px;
-  max-width: min(244px, calc(100vw - 32px));
-  padding: 8px;
+  gap: 7px;
+  height: 38px;
+  padding: 0 10px;
   background: var(--glass);
   border: 1px solid var(--hairline-2);
-  border-radius: 3px;
+  border-radius: 6px;
   backdrop-filter: blur(12px);
 }
 
 .focus-peaking-control button {
   flex: none;
-  width: 60px;
-  min-height: 36px;
-  padding: 0 8px;
+  min-width: 46px;
+  height: 26px;
+  padding: 0 6px;
   background: transparent;
-  border: 1px solid var(--hairline-2);
-  border-radius: 2px;
+  border: 0;
   color: var(--ink-2);
   font-family: var(--mono);
   font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
-.focus-peaking-control button[aria-checked="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #080a0b;
+.focus-peaking-control[data-enabled="true"] button {
+  color: var(--peak);
   font-weight: 700;
 }
 
 .focus-peaking-control button:disabled {
   color: var(--ink-3);
-  border-color: var(--hairline);
   cursor: not-allowed;
 }
 
 .focus-peaking-control input {
-  width: 112px;
+  width: 74px;
   min-width: 0;
   accent-color: var(--peak);
 }
 
 .focus-peaking-control input:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 
 .focus-peaking-control output {
@@ -596,40 +702,44 @@ a:hover {
   text-align: right;
 }
 
+/* RAW IMU：紧凑的竖排计数器，收在取景工具条下方。 */
 .overlay-card {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 11px 14px;
+  gap: 3px;
+  max-width: calc(100vw - 28px);
+  padding: 9px 12px;
   background: var(--glass);
   border: 1px solid var(--hairline);
-  border-radius: 3px;
+  border-radius: 6px;
   backdrop-filter: blur(12px);
 }
 
 .imu-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .imu-row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 8px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
+  min-width: 0;
 }
 
 .imu-row dt {
   width: 14px;
   flex: none;
-  color: var(--ink-3);
+  color: var(--ink-4);
 }
 
 .imu-row dd {
+  min-width: 0;
   color: var(--live);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .imu-row dd[data-available="false"] {
@@ -640,11 +750,11 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 34px;
   padding: 6px 12px;
   background: var(--glass);
   border: 1px solid var(--hairline);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink-2);
   font-size: 12px;
   backdrop-filter: blur(12px);
@@ -652,26 +762,73 @@ a:hover {
 
 /* -------------------------------------------------------------- 底部命令 */
 
+/* 底部操作台：实心台面 + 硬顶边，不再是半透明糊在一起的一条。 */
 .bottombar {
   grid-row: 3;
   grid-column: 1;
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 18px;
-  min-height: 120px;
-  padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)) 16px;
-  background: var(--glass-strong);
-  backdrop-filter: blur(18px);
-  border-top: 1px solid var(--hairline);
+  gap: 22px;
+  min-height: 132px;
+  padding: 12px 22px calc(12px + env(safe-area-inset-bottom, 0px)) 22px;
+  background: var(--deck);
+  border-top: 1px solid var(--hairline-2);
 }
 
 .command-form {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 22px;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* 快门与模式一列：录制 | 标定 段选在上，放大的快门在下。 */
+.shutter-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.mode-seg {
+  display: flex;
+  border: 1px solid var(--hairline-2);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.mode-seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 4px 12px;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--hairline);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mode-seg button:first-child {
+  border-left: 0;
+}
+
+.mode-seg button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.mode-seg button:disabled {
+  color: var(--ink-4);
+  cursor: not-allowed;
 }
 
 .shutter {
@@ -679,48 +836,52 @@ a:hover {
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 76px;
-  height: 76px;
+  width: 74px;
+  height: 74px;
   border-radius: 50%;
-  background: var(--record);
-  border: 4px solid rgba(255, 255, 255, 0.26);
+  background: transparent;
+  border: 4px solid rgba(255, 255, 255, 0.9);
 }
 
 .shutter:disabled {
-  background: rgba(255, 59, 45, 0.32);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
   cursor: not-allowed;
 }
 
 .shutter-dot {
-  width: 26px;
-  height: 26px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--record);
 }
 
 .shutter[data-recording="true"] .shutter-dot {
-  border-radius: 3px;
-  background: #140604;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.shutter:disabled .shutter-dot {
+  background: #3a1512;
 }
 
 .command-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   flex: 1 1 240px;
 }
 
 .name-input {
   width: 100%;
-  max-width: 420px;
-  height: 44px;
+  max-width: 440px;
+  height: 42px;
   padding: 0 12px;
   background: var(--sunken);
   color: var(--ink);
   border: 1px solid var(--hairline-2);
-  border-radius: 3px;
+  border-radius: 5px;
   font-family: inherit;
   font-size: 15px;
 }
@@ -735,7 +896,7 @@ a:hover {
 }
 
 .session-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -745,44 +906,55 @@ a:hover {
 .session-uuid {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ink-3);
+  color: var(--ink-4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* 读数：等宽 22，去包边只留细分隔，实时走 live、空闲走 ink。 */
 .readout {
   display: flex;
   flex: none;
-  gap: 1px;
-  background: var(--hairline);
-  border: 1px solid var(--hairline);
-  border-radius: 3px;
-  overflow: hidden;
+  align-items: flex-end;
+  gap: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .readout > div {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: 9px 16px;
-  background: rgba(8, 10, 11, 0.9);
+  gap: 4px;
+  padding: 0 20px;
+  background: transparent;
+  border-left: 1px solid var(--hairline);
+}
+
+.readout > div:first-child {
+  border-left: 0;
+  padding-left: 0;
 }
 
 .readout dt {
-  font-size: 11px;
-  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
 }
 
 .readout dd {
   font-family: var(--mono);
-  font-size: 17px;
+  font-size: 22px;
+  line-height: 1.1;
   color: var(--live);
   white-space: nowrap;
 }
 
 .readout dd[data-idle="true"] {
-  color: var(--ink-3);
+  color: var(--ink-4);
 }
 
 .command-actions {
@@ -833,27 +1005,27 @@ a:hover {
   grid-column: 1;
   justify-self: end;
   z-index: 40;
-  width: min(420px, 92vw);
+  width: min(452px, 94vw);
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--glass-panel);
-  backdrop-filter: blur(20px);
-  border-left: 1px solid var(--hairline);
+  background: var(--panel-bg);
+  border-left: 1px solid var(--hairline-2);
 }
 
 .panel-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex: none;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--hairline);
+  min-height: 60px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline-2);
 }
 
 .panel-title {
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .panel-tools {
@@ -932,15 +1104,36 @@ a:hover {
 }
 
 .session-row {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
-  padding: 12px 14px;
+  padding: 13px 14px 13px 19px;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   text-align: left;
+}
+
+/* 每行左侧一根 3px 状态色条：绿=可用、琥珀=未成功/未校验、红=不可用。 */
+.session-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--positive);
+}
+
+.session-row[data-verdict="unknown"]::before,
+.session-row[data-outcome="unsuccessful"]::before {
+  background: var(--caution);
+}
+
+.session-row[data-verdict="unusable"]::before {
+  background: var(--fault);
 }
 
 .session-row:hover {
@@ -1152,6 +1345,91 @@ a:hover {
   pointer-events: none;
 }
 
+/* -------------------------------------------------- 判定印章 / 容量条 */
+
+/* 生产方声明 vs 消费方判断：并排两枚印章，这是产品核心语义，必须一眼看到。 */
+.verdict-stamps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.verdict-stamp {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 5px;
+}
+
+.verdict-stamp dt {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.verdict-stamp dd {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.verdict-stamp .stamp-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
+.verdict-stamp[data-tone="permit"] {
+  border-color: rgba(70, 201, 138, 0.45);
+}
+
+.verdict-stamp[data-tone="permit"] dd {
+  color: var(--positive);
+}
+
+.verdict-stamp[data-tone="fault"] {
+  border-color: rgba(255, 59, 45, 0.45);
+}
+
+.verdict-stamp[data-tone="fault"] dd {
+  color: var(--fault);
+}
+
+.verdict-stamp[data-tone="caution"] {
+  border-color: rgba(224, 160, 32, 0.45);
+}
+
+.verdict-stamp[data-tone="caution"] dd {
+  color: var(--caution);
+}
+
+.capacity-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.09);
+  overflow: hidden;
+}
+
+.capacity-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+}
+
+.capacity-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+}
+
 /* -------------------------------------------------------------- 面板表单 */
 
 .panel-note {
@@ -1169,9 +1447,11 @@ a:hover {
 }
 
 .network-current {
-  padding: 16px 14px 15px;
-  border-bottom: 1px solid var(--hairline);
-  background: rgba(255, 255, 255, 0.025);
+  margin: 16px 14px 0;
+  padding: 14px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .network-current-topline,
@@ -1191,12 +1471,12 @@ a:hover {
 
 .network-current > strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 6px;
   overflow: hidden;
   color: var(--ink);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 26px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1541,6 +1821,18 @@ a:hover {
   font-size: 12px;
 }
 
+.session-delete {
+  gap: 10px;
+}
+
+.session-delete > .panel-danger {
+  align-self: flex-start;
+}
+
+.session-delete-confirm {
+  margin: 0;
+}
+
 .network-progress {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1708,11 +2000,11 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(420px, 100%);
-  padding: 20px;
-  background: var(--glass-panel);
+  width: min(440px, 100%);
+  padding: 24px;
+  background: var(--panel-bg);
   border: 1px solid var(--hairline-2);
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 .credential input {
@@ -1807,30 +2099,44 @@ a:hover {
   .readout {
     grid-area: readout;
     min-width: 0;
+    align-items: stretch;
   }
 
   .readout > div {
     flex: 1 1 0;
-    padding: 6px 7px;
+    padding: 0 8px;
     min-width: 0;
+    border-left: 1px solid var(--hairline);
+  }
+
+  .readout > div:first-child {
+    padding-left: 8px;
   }
 
   .readout dt {
-    font-size: 10px;
+    font-size: 9px;
   }
 
   .readout dd {
-    font-size: 14px;
+    font-size: 17px;
+  }
+
+  .shutter-stack {
+    grid-area: shutter;
   }
 
   .shutter {
-    grid-area: shutter;
-    width: 64px;
-    height: 64px;
+    width: 60px;
+    height: 60px;
     border-width: 3px;
   }
 
   .shutter-dot {
+    width: 40px;
+    height: 40px;
+  }
+
+  .shutter[data-recording="true"] .shutter-dot {
     width: 22px;
     height: 22px;
   }
@@ -1850,8 +2156,7 @@ a:hover {
   }
 
   .stage-left {
-    left: 12px;
-    top: 12px;
+    margin: 10px 0 0 12px;
     gap: 8px;
   }
 

@@ -200,7 +200,7 @@ test("相机断开不影响控制面并在热插拔后自动恢复", async ({ pa
 
   await expect(page.locator(".connection")).toHaveText("已连接");
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
-  await expect(page.getByText("相机未接入", { exact: true })).toBeVisible();
+  await expect(page.locator(".frame-empty").getByText("相机未接入", { exact: true })).toBeVisible();
   await expect(page.getByTestId("preview-image")).toBeHidden();
   await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
   const devicePanel = await openPanel(page, "设备与链路");
@@ -221,7 +221,9 @@ test("相机断开不影响控制面并在热插拔后自动恢复", async ({ pa
 
   await request.post("/__fixture/config", { data: { cameraConnected: false } });
 
-  await expect(page.getByText("相机未接入", { exact: true })).toBeVisible({ timeout: 5000 });
+  await expect(
+    page.locator(".frame-empty").getByText("相机未接入", { exact: true }),
+  ).toBeVisible({ timeout: 5000 });
   await expect(page.getByTestId("preview-image")).toBeHidden();
   await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
 });
@@ -933,10 +935,11 @@ test("录制名称可留空并由设备使用可读真实时间命名", async ({
 test("能力允许时标定入口只发送 calibration 模式", async ({ page, request }) => {
   await page.goto("/");
 
-  const calibration = page.getByRole("button", { name: "标定录制" });
-  await expect(calibration).toBeEnabled();
+  const calibrationMode = page.getByRole("button", { name: "标定", exact: true });
+  await expect(calibrationMode).toBeEnabled();
+  await calibrationMode.click();
   await page.getByLabel("录制名称（可选）").fill("标定分眼 01");
-  await calibration.click();
+  await page.getByRole("button", { name: "开始标定录制" }).click();
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   const response = await request.get("/__fixture/requests");
@@ -960,10 +963,10 @@ test("能力禁用时标定入口显示设备原因且发送零请求", async ({
   });
   await page.goto("/");
 
-  const calibration = page.getByRole("button", { name: "标定录制" });
-  await expect(calibration).toBeDisabled();
-  await expect(calibration).toHaveAttribute("title", "分眼录制链路不可用");
-  await calibration.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
+  const calibrationMode = page.getByRole("button", { name: "标定", exact: true });
+  await expect(calibrationMode).toBeDisabled();
+  await expect(calibrationMode).toHaveAttribute("title", "分眼录制链路不可用");
+  await calibrationMode.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
 
   expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(0);
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
@@ -974,23 +977,24 @@ test("录制忙碌时标定入口禁用且不发送第二个 start", async ({ pa
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
-  const calibration = page.getByRole("button", { name: "标定录制" });
-  await expect(calibration).toBeDisabled();
-  await calibration.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
+  const calibrationMode = page.getByRole("button", { name: "标定", exact: true });
+  await expect(calibrationMode).toBeDisabled();
+  await calibrationMode.evaluate((element) => /** @type {HTMLButtonElement} */ (element).click());
   expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(1);
 });
 
 test("标定能力在请求时过期会显示设备错误且恢复后可重试", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { calibrationStartUnavailable: true } });
   await page.goto("/");
-  await page.getByRole("button", { name: "标定录制" }).click();
+  await page.getByRole("button", { name: "标定", exact: true }).click();
+  await page.getByRole("button", { name: "开始标定录制" }).click();
 
   await expect(page.getByRole("alert")).toContainText("calibration_unavailable");
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(1);
 
   await request.post("/__fixture/config", { data: { calibrationStartUnavailable: false } });
-  await page.getByRole("button", { name: "标定录制" }).click();
+  await page.getByRole("button", { name: "开始标定录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(2);
 });
@@ -999,7 +1003,8 @@ test("标定录制终态刷新后进入会话台账", async ({ page }) => {
   await page.goto("/");
   const name = "标定终态刷新";
   await page.getByLabel("录制名称（可选）").fill(name);
-  await page.getByRole("button", { name: "标定录制" }).click();
+  await page.getByRole("button", { name: "标定", exact: true }).click();
+  await page.getByRole("button", { name: "开始标定录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await page.getByRole("button", { name: "结束录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
@@ -1543,6 +1548,55 @@ test("会话列表保持生产终态与网关可用性分离并显示发现诊�
   const unknownSession = page.getByTestId("session-item").filter({ hasText: "第二段采集" });
   await expect(unknownSession.getByText("尚未校验", { exact: true })).toBeVisible();
   await expect(page.getByText("发现一个无法读取的会话清单，已隔离")).toBeVisible();
+});
+
+test("支持删除的设备允许确认删除封存会话并刷新台账", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionDeletion: true } });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+
+  await page.getByTestId("session-item").filter({ hasText: "入口标定" }).click();
+  const detail = page.getByRole("complementary", { name: "会话详情" });
+  await expect(detail).toBeVisible();
+  const deleteButton = detail.getByTestId("delete-session");
+  await expect(deleteButton).toBeEnabled();
+
+  await deleteButton.click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("永久删除“入口标定”？");
+  await expect(dialog.getByRole("button", { name: "取消" })).toBeFocused();
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(deleteButton).toBeFocused();
+
+  await deleteButton.click();
+  await dialog.getByRole("button", { name: "确认删除" }).click();
+  await expect(page.getByRole("complementary", { name: "会话台账" })).toBeVisible();
+  await expect(page.getByText("入口标定", { exact: true })).toHaveCount(0);
+
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  const deletion = body.requests.find((entry) => entry.path === "/api/v4/sessions/delete");
+  expect(deletion?.idempotencyKey).toBeTruthy();
+  expect(deletion?.body).toEqual({
+    schema: "ylx.session-delete-request.v1",
+    sessions: [
+      {
+        session_id: "01989f6a-2c00-7a1b-8c2d-3e4f50617286",
+        manifest_sha256: "e".repeat(64),
+      },
+    ],
+  });
+});
+
+test("未声明远程删除能力时会话详情保持删除按钮禁用", async ({ page }) => {
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await page.getByTestId("session-item").filter({ hasText: "入口标定" }).click();
+
+  const detail = page.getByRole("complementary", { name: "会话详情" });
+  await expect(detail.getByTestId("delete-session")).toBeDisabled();
+  await expect(detail).toContainText("当前固件未声明远程删除能力");
 });
 
 test("D-049 冻结中断结果只显示未成功且不恢复", async ({ page, request }) => {

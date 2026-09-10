@@ -7,6 +7,7 @@ import type {
   NetworkEvent,
   NetworkTransactionReceipt,
   NetworkWifiSecurity,
+  SessionDeleteResult,
   SessionList,
 } from "../api/types";
 import {
@@ -378,6 +379,21 @@ export class EchoStore {
   };
 
   closeSession = (): void => this.dispatch({ type: "session.closed" });
+
+  deleteSession = async (
+    sessionId: string,
+    manifestSha256: string,
+  ): Promise<SessionDeleteResult> => {
+    if (this.state.device?.capabilities.session_deletion !== true) {
+      throw new DeviceApiError("当前设备不支持远程删除", 409, "session_deletion_unsupported");
+    }
+    const result = await deviceApi.deleteSessions([
+      { session_id: sessionId, manifest_sha256: manifestSha256 },
+    ]);
+    await this.refreshRelatedResources();
+    await this.refreshSessions();
+    return result;
+  };
 
   startCapture = async (
     displayName?: string,
