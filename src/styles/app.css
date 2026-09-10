@@ -1821,6 +1821,18 @@ a:hover {
   font-size: 12px;
 }
 
+.session-delete {
+  gap: 10px;
+}
+
+.session-delete > .panel-danger {
+  align-self: flex-start;
+}
+
+.session-delete-confirm {
+  margin: 0;
+}
+
 .network-progress {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

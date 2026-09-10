@@ -234,6 +234,42 @@ test("v4 device capabilities accept optional session deletion support", async ()
   });
 });
 
+test("session deletion sends the frozen v4 command and validates its result", async () => {
+  const originalFetch = globalThis.fetch;
+  const request = {
+    session_id: "01989f6a-2c00-7a1b-8c2d-3e4f50617286",
+    manifest_sha256: "e".repeat(64),
+  };
+  const result = {
+    schema: "ylx.session-delete-result.v1",
+    deleted_session_ids: [request.session_id],
+    failed_sessions: [],
+  };
+  let received;
+  globalThis.fetch = async (input, init) => {
+    received = { input: String(input), init };
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    await expect(deviceApi.deleteSessions([request], "delete-test-key")).resolves.toEqual(result);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  expect(received.input).toBe("/api/v4/sessions/delete");
+  expect(received.init.method).toBe("POST");
+  const headers = new Headers(received.init.headers);
+  expect(headers.get("Idempotency-Key")).toBe("delete-test-key");
+  expect(headers.get("Content-Type")).toBe("application/json");
+  expect(JSON.parse(received.init.body)).toEqual({
+    schema: "ylx.session-delete-request.v1",
+    sessions: [request],
+  });
+});
+
 test("pagination drops a mismatched catalog and restarts without a cursor", async () => {
   const first = sessionSummary(
     "01989f6a-2c00-7a1b-8c2d-3e4f50617286",

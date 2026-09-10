@@ -1550,6 +1550,55 @@ test("会话列表保持生产终态与网关可用性分离并显示发现诊�
   await expect(page.getByText("发现一个无法读取的会话清单，已隔离")).toBeVisible();
 });
 
+test("支持删除的设备允许确认删除封存会话并刷新台账", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionDeletion: true } });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+
+  await page.getByTestId("session-item").filter({ hasText: "入口标定" }).click();
+  const detail = page.getByRole("complementary", { name: "会话详情" });
+  await expect(detail).toBeVisible();
+  const deleteButton = detail.getByTestId("delete-session");
+  await expect(deleteButton).toBeEnabled();
+
+  await deleteButton.click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("永久删除“入口标定”？");
+  await expect(dialog.getByRole("button", { name: "取消" })).toBeFocused();
+  await dialog.getByRole("button", { name: "取消" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(deleteButton).toBeFocused();
+
+  await deleteButton.click();
+  await dialog.getByRole("button", { name: "确认删除" }).click();
+  await expect(page.getByRole("complementary", { name: "会话台账" })).toBeVisible();
+  await expect(page.getByText("入口标定", { exact: true })).toHaveCount(0);
+
+  const response = await request.get("/__fixture/requests");
+  const body = /** @type {{requests: FixtureRequestLog[]}} */ (await response.json());
+  const deletion = body.requests.find((entry) => entry.path === "/api/v4/sessions/delete");
+  expect(deletion?.idempotencyKey).toBeTruthy();
+  expect(deletion?.body).toEqual({
+    schema: "ylx.session-delete-request.v1",
+    sessions: [
+      {
+        session_id: "01989f6a-2c00-7a1b-8c2d-3e4f50617286",
+        manifest_sha256: "e".repeat(64),
+      },
+    ],
+  });
+});
+
+test("未声明远程删除能力时会话详情保持删除按钮禁用", async ({ page }) => {
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await page.getByTestId("session-item").filter({ hasText: "入口标定" }).click();
+
+  const detail = page.getByRole("complementary", { name: "会话详情" });
+  await expect(detail.getByTestId("delete-session")).toBeDisabled();
+  await expect(detail).toContainText("当前固件未声明远程删除能力");
+});
+
 test("D-049 冻结中断结果只显示未成功且不恢复", async ({ page, request }) => {
   await request.post("/__fixture/frozen-interrupted-outcome");
 

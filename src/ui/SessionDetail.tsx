@@ -1,7 +1,8 @@
+import { useEffect, useRef, useState } from "preact/hooks";
 import { deviceApi } from "../api/client";
 import type { SessionArtifact, SessionDetail as SessionDetailManifest } from "../api/types";
-import type { AppState } from "../state/reducer";
-import { store } from "../state/store";
+import type { AppState, VisibleError } from "../state/reducer";
+import { store, visibleError } from "../state/store";
 import { formatBytes, formatClock, formatSeconds } from "./format";
 import { BackIcon, CloseIcon, DownloadIcon } from "./icons";
 
@@ -66,6 +67,29 @@ export function SessionDetail({ state }: { state: AppState }) {
   const back = () => store.closeSession();
   const summary = state.sessions.items.find((item) => item.session_id === selected.sessionId);
   const title = summary?.display_name ?? selected.sessionId;
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<VisibleError | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  const deleteConfirmationTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!deleteConfirmation) {
+      return;
+    }
+    const focusFrame = window.requestAnimationFrame(() => deleteCancelRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      const trigger = deleteConfirmationTriggerRef.current;
+      deleteConfirmationTriggerRef.current = null;
+      window.requestAnimationFrame(() => {
+        if (trigger?.isConnected) {
+          trigger.focus();
+        }
+      });
+    };
+  }, [deleteConfirmation]);
 
   if (selected.loading) {
     return (
@@ -137,6 +161,39 @@ export function SessionDetail({ state }: { state: AppState }) {
   const verdict = summary?.verification?.verdict ?? null;
   // 门禁：只有消费方独立判为 usable 且设备声明 range_download 时才出现下载入口。
   const downloadable = verdict === "usable" && state.device?.capabilities.range_download === true;
+  const deletionSupported = state.device?.capabilities.session_deletion === true;
+  const manifestSha256 = summary?.verification?.manifest_sha256 ?? null;
+  const hasManifestDigest =
+    typeof manifestSha256 === "string" && /^[0-9a-f]{64}$/i.test(manifestSha256);
+  const deletionReady = deletionSupported && detail.sealed && hasManifestDigest && !deletePending;
+
+  const confirmDelete = async () => {
+    if (!deletionReady || manifestSha256 === null) {
+      return;
+    }
+    setDeletePending(true);
+    setDeleteError(null);
+    try {
+      const result = await store.deleteSession(detail.session_id, manifestSha256);
+      if (!result.deleted_session_ids.includes(detail.session_id)) {
+        const failure = result.failed_sessions.find(
+          (entry) => entry.session_id === detail.session_id,
+        );
+        setDeleteError({
+          code: failure?.error ?? "session_delete_failed",
+          message: failure ? `删除失败：${failure.error}` : "设备没有确认删除此会话",
+        });
+        return;
+      }
+      setDeletePending(false);
+      setDeleteConfirmation(false);
+      store.closeSession();
+    } catch (error) {
+      setDeleteError(visibleError(error));
+    } finally {
+      setDeletePending(false);
+    }
+  };
 
   return (
     <aside class="panel" aria-label="会话详情">
@@ -285,6 +342,81 @@ export function SessionDetail({ state }: { state: AppState }) {
               </a>
             </div>
           ))}
+        </section>
+
+        <section class="detail-section session-delete">
+          <span class="eyebrow">DELETE</span>
+          <p class="panel-note">
+            删除会永久移除设备上的这个会话及其全部制品；已经下载到本地的文件不受影响。
+          </p>
+          {deleteError ? (
+            <div class="alert" role="alert">
+              <code>{deleteError.code}</code>
+              <span>{deleteError.message}</span>
+            </div>
+          ) : null}
+          <button
+            ref={deleteTriggerRef}
+            type="button"
+            class="panel-danger"
+            data-testid="delete-session"
+            disabled={!deletionReady}
+            aria-disabled={!deletionReady}
+            onClick={() => {
+              if (deletionReady) {
+                deleteConfirmationTriggerRef.current = deleteTriggerRef.current;
+                setDeleteError(null);
+                setDeleteConfirmation(true);
+              }
+            }}
+          >
+            {deletePending ? "正在删除" : "删除此会话"}
+          </button>
+          {!deletionSupported ? (
+            <p class="panel-note">当前固件未声明远程删除能力。</p>
+          ) : !hasManifestDigest ? (
+            <p class="panel-note">该会话尚未完成网关校验，暂不能安全删除。</p>
+          ) : null}
+
+          {deleteConfirmation ? (
+            <div
+              class="network-confirm danger session-delete-confirm"
+              role="alertdialog"
+              aria-labelledby="session-delete-title"
+              aria-describedby="session-delete-description"
+              aria-busy={deletePending}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !deletePending) {
+                  event.preventDefault();
+                  setDeleteConfirmation(false);
+                }
+              }}
+            >
+              <strong id="session-delete-title">永久删除“{detail.display_name}”？</strong>
+              <p id="session-delete-description">
+                设备上的视频、音频、帧索引和 IMU 文件都会被删除，操作不可撤销。
+              </p>
+              <div class="network-confirm-actions">
+                <button
+                  type="button"
+                  class="panel-danger"
+                  disabled={deletePending}
+                  onClick={() => void confirmDelete()}
+                >
+                  {deletePending ? "正在删除" : "确认删除"}
+                </button>
+                <button
+                  ref={deleteCancelRef}
+                  type="button"
+                  class="panel-secondary"
+                  disabled={deletePending}
+                  onClick={() => setDeleteConfirmation(false)}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
     </aside>

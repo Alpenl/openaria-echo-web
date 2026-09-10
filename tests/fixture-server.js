@@ -76,6 +76,7 @@ const previewJpeg = Buffer.from(
  * @property {number} nextNetworkCredential
  * @property {number} sessionsDelayMs
  * @property {number} sessionPublicationDelayMs
+ * @property {boolean} sessionDeletion
  * @property {number} eventSnapshotDelayMs
  * @property {number} previewDelayMs
  * @property {number} previewRequests
@@ -248,7 +249,8 @@ const makeRuntime = () => ({
 });
 
 /** @returns {DeviceDescriptor & Record<string, unknown>} */
-const makeDevice = () => ({
+/** @param {boolean} [sessionDeletion] */
+const makeDevice = (sessionDeletion = false) => ({
   schema: "ylx.device.v4",
   device: { device_id: deviceId, device_label: "YLX-A1B2C3D4" },
   hardware_fingerprint: `sha256:${"a".repeat(64)}`,
@@ -268,7 +270,7 @@ const makeDevice = () => ({
     session_detail: true,
     artifact_download: true,
     capture_status: true,
-    session_deletion: false,
+    session_deletion: sessionDeletion,
     calibration_capture: {
       supported: true,
       enabled: true,
@@ -302,7 +304,7 @@ const makeSnapshot = () => ({
 /** @returns {Fixture} */
 function makeFixture() {
   return {
-    device: makeDevice(),
+    device: makeDevice(false),
     snapshot: makeSnapshot(),
     networkStatus: makeNetworkStatus(),
     sessions: {
@@ -372,6 +374,7 @@ function makeFixture() {
     nextNetworkCredential: 1,
     sessionsDelayMs: 0,
     sessionPublicationDelayMs: 0,
+    sessionDeletion: false,
     eventSnapshotDelayMs: 0,
     previewDelayMs: 20,
     previewRequests: 0,
@@ -381,6 +384,91 @@ function makeFixture() {
     requireBearer: false,
     apiRequests: [],
     captureSequence: 0,
+  };
+}
+
+/** @param {import("../src/api/types.ts").SessionSummary} summary @returns {import("../src/api/types.ts").SessionDetail} */
+function makeSessionDetail(summary) {
+  const artifact = (suffix, role, path, mediaType, bytes) => ({
+    artifact_id: `${summary.session_id}-${suffix}`,
+    bytes,
+    media_type: mediaType,
+    path,
+    role,
+    sha256: "f".repeat(64),
+  });
+  const left = artifact("left", "video.left", "video/left.mp4", "video/mp4", 1024);
+  const right = artifact("right", "video.right", "video/right.mp4", "video/mp4", 1024);
+  const frames = artifact(
+    "frames",
+    "frames.index",
+    "frames/frames.ndjson",
+    "application/x-ndjson",
+    256,
+  );
+  const imu = artifact("imu", "imu.samples", "imu/imu.ndjson", "application/x-ndjson", 256);
+  return {
+    schema: "ylx.device-session.v3",
+    session_id: summary.session_id,
+    manifest_id: manifestId,
+    volume_id: volumeId,
+    display_name: summary.display_name,
+    capture_mode: "production",
+    sealed: true,
+    sealed_at: summary.ended_at,
+    device: {
+      device_id: summary.device.device_id,
+      device_label: summary.device.device_label,
+      platform: "D-Robotics RDK X5",
+      software_version: "0.5.0-dev",
+      commit: "b".repeat(40),
+      hardware_fingerprint: `sha256:${"a".repeat(64)}`,
+    },
+    take: {
+      take_id: summary.take_id,
+      sequence: summary.take_sequence,
+      continuation_of: summary.continuation_of,
+    },
+    time: {
+      started_at: summary.started_at,
+      ended_at: summary.ended_at,
+      duration_seconds: summary.duration_seconds,
+      timezone: "Asia/Shanghai",
+    },
+    camera: {
+      width: 3840,
+      height: 1080,
+      eye_width: 1920,
+      nominal_fps: 60,
+      sensor_fps: 60,
+      effective_fps: 60,
+      frame_decimation: 1,
+      coordinate_frame: "opencv_optical",
+    },
+    video: {
+      codec: "h264",
+      container: "mp4",
+      layout: "split-eyes",
+      segments: [
+        {
+          index: 0,
+          start_frame: 0,
+          end_frame: 7500,
+          start_time_seconds: 0,
+          end_time_seconds: summary.duration_seconds,
+          artifacts: { left, right },
+        },
+      ],
+    },
+    frames: { count: 7500, artifact: frames },
+    imu: { artifact: imu, coordinate_frame: "device" },
+    logs: [],
+    integrity: {
+      dropped_frames: 0,
+      drop_events: [],
+      fatal_errors: [],
+      verified_at: summary.verification?.verified_at ?? summary.ended_at,
+    },
   };
 }
 
@@ -1063,7 +1151,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/__fixture/config" && request.method === "POST") {
-    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, cameraConnected?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string, calibrationEnabled?: boolean, calibrationReason?: import("../src/api/types.ts").CalibrationCaptureDisabledReason, calibrationUnknownField?: boolean, calibrationStartUnavailable?: boolean}} */ (
+    const config = /** @type {{commandDelayMs?: number, previewDelayMs?: number, requireBearer?: boolean, stopReturns204?: boolean, startProblem?: boolean, stopProblem?: boolean, eventsUnavailable?: boolean, sessionsVolumeUnavailable?: boolean, networkMutation?: boolean, networkUnavailable?: boolean, cameraConnected?: boolean, sessionsDelayMs?: number, sessionPublicationDelayMs?: number, sessionDeletion?: boolean, eventSnapshotDelayMs?: number, cameraFocusAutoSupported?: boolean, apiVersion?: string, calibrationEnabled?: boolean, calibrationReason?: import("../src/api/types.ts").CalibrationCaptureDisabledReason, calibrationUnknownField?: boolean, calibrationStartUnavailable?: boolean}} */ (
       await readJson(request)
     );
     if (typeof config.apiVersion === "string") {
@@ -1176,6 +1264,15 @@ const server = createServer(async (request, response) => {
     }
     if (Number.isFinite(config.sessionPublicationDelayMs)) {
       fixture.sessionPublicationDelayMs = Number(config.sessionPublicationDelayMs);
+    }
+    if (typeof config.sessionDeletion === "boolean") {
+      fixture.sessionDeletion = config.sessionDeletion;
+      fixture.device.capabilities.session_deletion = config.sessionDeletion;
+      if (config.sessionDeletion) {
+        fixture.sessions.items = fixture.sessions.items.filter(
+          (session) => session.session_id !== historicalSessionId,
+        );
+      }
     }
     if (Number.isFinite(config.eventSnapshotDelayMs)) {
       fixture.eventSnapshotDelayMs = Number(config.eventSnapshotDelayMs);
@@ -1843,6 +1940,142 @@ const server = createServer(async (request, response) => {
       setIdleAfterUserStop();
       broadcastSnapshot();
     }, 80);
+    return;
+  }
+
+  if (url.pathname === "/api/v4/sessions/delete" && request.method === "POST") {
+    const body = await readJson(request);
+    if (apiRequest) {
+      apiRequest.body = redactSecrets(body);
+    }
+    const bodyRecord =
+      body && typeof body === "object" && !Array.isArray(body) ? body : null;
+    const items = bodyRecord?.sessions;
+    const validBody =
+      bodyRecord !== null &&
+      Object.keys(bodyRecord).length === 2 &&
+      bodyRecord.schema === "ylx.session-delete-request.v1" &&
+      Array.isArray(items) &&
+      items.length >= 1 &&
+      items.every(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item) &&
+          Object.keys(item).length === 2 &&
+          typeof item.session_id === "string" &&
+          /^[0-9a-f-]{36}$/i.test(item.session_id) &&
+          typeof item.manifest_sha256 === "string" &&
+          /^[0-9a-f]{64}$/i.test(item.manifest_sha256),
+      );
+    if (!fixture.sessionDeletion) {
+      sendJson(response, 409, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "session_deletion_unsupported",
+          message: "当前 fixture 未启用远程删除能力",
+          request_id: "8c836a7f-8d35-4f91-9b35-5ec3bf6f4b09",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    if (!request.headers["idempotency-key"] || !validBody) {
+      sendJson(response, 400, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "invalid_session_delete_request",
+          message: "会话删除请求不符合 v4 契约",
+          request_id: "8c836a7f-8d35-4f91-9b35-5ec3bf6f4b09",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    const selected = items.map((item) =>
+      fixture.sessions.items.find((session) => session.session_id === item.session_id),
+    );
+    if (selected.some((session) => !session)) {
+      sendJson(response, 404, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "session_not_found",
+          message: "请求删除的会话不存在",
+          request_id: "8c836a7f-8d35-4f91-9b35-5ec3bf6f4b09",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    const selectedIds = new Set(items.map((item) => item.session_id));
+    const digestMismatch = selected.some((session, index) => {
+      const expected = session.verification?.manifest_sha256;
+      return expected !== items[index].manifest_sha256;
+    });
+    if (digestMismatch) {
+      sendJson(response, 409, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "manifest_digest_mismatch",
+          message: "会话清单摘要已变化，请刷新后重新确认",
+          request_id: "8c836a7f-8d35-4f91-9b35-5ec3bf6f4b09",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    const missingContinuation = fixture.sessions.items.some(
+      (session) =>
+        session.continuation_of !== null &&
+        selectedIds.has(session.continuation_of) &&
+        !selectedIds.has(session.session_id),
+    );
+    if (missingContinuation) {
+      sendJson(response, 409, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "continuation_required",
+          message: "请同时选择后续连续录制",
+          request_id: "8c836a7f-8d35-4f91-9b35-5ec3bf6f4b09",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    fixture.sessions.items = fixture.sessions.items.filter(
+      (session) => !selectedIds.has(session.session_id),
+    );
+    fixture.device.storage.available_bytes += selected.reduce(
+      (total, session) => total + session.total_bytes,
+      0,
+    );
+    sendJson(response, 200, {
+      schema: "ylx.session-delete-result.v1",
+      deleted_session_ids: items.map((item) => item.session_id),
+      failed_sessions: [],
+    });
+    return;
+  }
+
+  const sessionDetailMatch = url.pathname.match(/^\/api\/v4\/sessions\/([^/]+)$/);
+  if (request.method === "GET" && sessionDetailMatch) {
+    const requestedSessionId = decodeURIComponent(sessionDetailMatch[1]);
+    const summary = fixture.sessions.items.find(
+      (session) => session.session_id === requestedSessionId,
+    );
+    if (!summary) {
+      sendJson(response, 404, {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: "session_not_found",
+          message: "会话不存在",
+          request_id: "8c836a7f-8d35-4f91-9b35-5ec3bf6f4b09",
+          retryable: false,
+        },
+      });
+      return;
+    }
+    sendJson(response, 200, makeSessionDetail(summary));
     return;
   }
 

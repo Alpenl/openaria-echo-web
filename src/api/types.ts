@@ -236,6 +236,22 @@ export interface SessionListV3 {
 
 export type SessionList = SessionListV2 | SessionListV3;
 
+export interface SessionDeleteItem {
+  session_id: string;
+  manifest_sha256: string;
+}
+
+export interface SessionDeleteFailure {
+  session_id: string;
+  error: string;
+}
+
+export interface SessionDeleteResult {
+  schema: "ylx.session-delete-result.v1";
+  deleted_session_ids: string[];
+  failed_sessions: SessionDeleteFailure[];
+}
+
 /** manifest 里的 artifact 条目；Range 下载按 artifact_id 寻址，不按 path 猜角色。 */
 export interface SessionArtifact {
   artifact_id: string;

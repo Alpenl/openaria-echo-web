@@ -8,6 +8,8 @@ import type {
   NetworkStatus,
   NetworkTransactionReceipt,
   SessionDetail,
+  SessionDeleteItem,
+  SessionDeleteResult,
   SessionList,
   UnsuccessfulOutcome,
 } from "./types";
@@ -240,6 +242,37 @@ function assertSessionList(sessions: unknown): SessionList {
   return sessions;
 }
 
+const SESSION_DELETE_RESULT_KEYS = new Set([
+  "schema",
+  "deleted_session_ids",
+  "failed_sessions",
+]);
+const SESSION_DELETE_FAILURE_KEYS = new Set(["session_id", "error"]);
+
+function assertSessionDeleteResult(result: unknown): SessionDeleteResult {
+  const valid =
+    hasExactKeys(result, SESSION_DELETE_RESULT_KEYS) &&
+    result.schema === "ylx.session-delete-result.v1" &&
+    Array.isArray(result.deleted_session_ids) &&
+    new Set(result.deleted_session_ids).size === result.deleted_session_ids.length &&
+    result.deleted_session_ids.every((sessionId) => typeof sessionId === "string") &&
+    Array.isArray(result.failed_sessions) &&
+    result.failed_sessions.every(
+      (failure) =>
+        hasExactKeys(failure, SESSION_DELETE_FAILURE_KEYS) &&
+        typeof failure.session_id === "string" &&
+        typeof failure.error === "string",
+    );
+  if (!valid) {
+    throw new DeviceApiError(
+      "Device API session deletion result 不符合 v4 契约",
+      502,
+      "unsupported_device_api_schema",
+    );
+  }
+  return result as unknown as SessionDeleteResult;
+}
+
 export async function makeApiError(response: Response): Promise<DeviceApiError> {
   let problem: unknown = null;
   try {
@@ -437,6 +470,14 @@ export const deviceApi = Object.freeze({
   },
   getSession: (sessionId: string) =>
     requestJson<SessionDetail>(`/sessions/${encodeURIComponent(sessionId)}`),
+  deleteSessions: (
+    sessions: readonly SessionDeleteItem[],
+    key = idempotencyKey(),
+  ) =>
+    requestJson<unknown>(
+      "/sessions/delete",
+      commandInitWithKey({ schema: "ylx.session-delete-request.v1", sessions }, key),
+    ).then(assertSessionDeleteResult),
   /** 只读结果接口：查询未成功会话不隐含 recovery，也不改变任何设备状态。 */
   getUnsuccessfulOutcome: (sessionId: string) =>
     requestOptionalJson<UnsuccessfulOutcome>(
