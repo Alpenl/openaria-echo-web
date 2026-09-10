@@ -25,6 +25,7 @@ export function TopBar({ state }: { state: AppState }) {
       </div>
 
       <strong class="state-chip" data-testid="capture-state" data-state={deviceState ?? "unknown"}>
+        {deviceState === "recording" ? <span class="rec-block" aria-hidden="true" /> : null}
         {deviceStateLabel(deviceState)}
       </strong>
 

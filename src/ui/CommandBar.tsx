@@ -64,6 +64,7 @@ function useDisplayedElapsedSeconds(
 
 export function CommandBar({ state }: { state: AppState }) {
   const [displayName, setDisplayName] = useState("");
+  const [mode, setMode] = useState<"record" | "calibration">("record");
   const snapshot = state.capture?.snapshot;
   const deviceState = snapshot?.device_state ?? null;
   const active = snapshot?.active_recording?.recording_state ?? null;
@@ -93,13 +94,23 @@ export function CommandBar({ state }: { state: AppState }) {
     !state.commandPending;
   const canStop = connected && recording && !state.commandPending;
   const calibrationCapability = state.device?.capabilities.calibration_capture;
-  const canStartCalibration = canStart && calibrationCapability?.enabled === true;
-  const calibrationReason = calibrationCapability?.enabled
+  const calibrationEnabled = calibrationCapability?.enabled === true;
+  const canStartCalibration = canStart && calibrationEnabled;
+  const calibrationReason = calibrationEnabled
     ? "开始分眼标定录制"
     : calibrationCapability
       ? CALIBRATION_DISABLED_REASON_LABELS[calibrationCapability.disabled_reason!]
       : "设备未报告标定录制能力";
-  const shutterLabel = state.commandPending ? "正在发送" : recording ? "结束录制" : "开始录制";
+  // 「标定」并入模式段选。能力未声明时该档禁用，原因写在提示里。
+  const calibrating = mode === "calibration" && calibrationEnabled;
+  const shutterReady = recording ? canStop : calibrating ? canStartCalibration : canStart;
+  const shutterLabel = state.commandPending
+    ? "正在发送"
+    : recording
+      ? "结束录制"
+      : calibrating
+        ? "开始标定录制"
+        : "开始录制";
 
   return (
     <footer class="bottombar">
@@ -111,21 +122,52 @@ export function CommandBar({ state }: { state: AppState }) {
             if (canStop) {
               void store.stopCapture();
             }
+          } else if (calibrating) {
+            if (canStartCalibration) {
+              void store.startCapture(displayName, "calibration");
+            }
           } else if (canStart) {
             void store.startCapture(displayName);
           }
         }}
       >
-        <button
-          type="submit"
-          class="shutter"
-          data-recording={String(recording)}
-          aria-label={shutterLabel}
-          title={shutterLabel}
-          disabled={recording ? !canStop : !canStart}
-        >
-          <span class="shutter-dot" aria-hidden="true" />
-        </button>
+        <div class="shutter-stack">
+          <div class="mode-seg" role="group" aria-label="录制模式">
+            <button
+              type="button"
+              aria-pressed={mode === "record"}
+              disabled={recording || state.commandPending}
+              onClick={() => setMode("record")}
+            >
+              录制
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "calibration"}
+              disabled={recording || state.commandPending || !calibrationEnabled}
+              title={calibrationReason}
+              aria-describedby={!calibrationEnabled ? "calibration-reason" : undefined}
+              onClick={() => {
+                if (calibrationEnabled) {
+                  setMode("calibration");
+                }
+              }}
+            >
+              <CalibrationIcon size={13} />
+              <span style="margin-left:6px">标定</span>
+            </button>
+          </div>
+          <button
+            type="submit"
+            class="shutter"
+            data-recording={String(recording)}
+            aria-label={shutterLabel}
+            title={shutterLabel}
+            disabled={!shutterReady}
+          >
+            <span class="shutter-dot" aria-hidden="true" />
+          </button>
+        </div>
 
         <div class="command-body">
         {active ? (
@@ -194,26 +236,9 @@ export function CommandBar({ state }: { state: AppState }) {
           </div>
         </dl>
       </form>
-      <div class="command-actions">
-        <button
-          type="button"
-          class="command-button"
-          disabled={!canStartCalibration}
-          title={calibrationReason}
-          aria-describedby={!canStartCalibration ? "calibration-reason" : undefined}
-          onClick={() => {
-            if (canStartCalibration) {
-              void store.startCapture(displayName, "calibration");
-            }
-          }}
-        >
-          <CalibrationIcon size={17} />
-          <span style="margin-left:8px">标定录制</span>
-        </button>
-        <span id="calibration-reason" class="visually-hidden">
-          {calibrationReason}
-        </span>
-      </div>
+      <span id="calibration-reason" class="visually-hidden">
+        {calibrationReason}
+      </span>
     </footer>
   );
 }

@@ -47,7 +47,15 @@ export function Stage({
         hidden={!showFrame}
       />
       <FocusPeakingOverlay state={state} frameUrl={showFrame ? frameUrl : null} />
-      {!showFrame ? (
+      {showFrame ? (
+        <div class="vf-furniture" aria-hidden="true">
+          <span class="vf-tick" data-edge="top" />
+          <span class="vf-tick" data-edge="bottom" />
+          <span class="vf-tick" data-edge="left" />
+          <span class="vf-tick" data-edge="right" />
+          <span class="vf-reticle" />
+        </div>
+      ) : (
         <p class="frame-empty">
           <span class="eyebrow">PREVIEW</span>
           <span>
@@ -58,7 +66,7 @@ export function Stage({
                 : "本机不提供预览"}
           </span>
         </p>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -69,19 +77,21 @@ export function StageOverlays({ state }: { state: AppState }) {
 
   return (
     <div class="stage-left">
-      <div class="inspect" data-testid="preview-inspect" role="group" aria-label="预览取景">
-        {INSPECT_MODES.map(({ mode, label }) => (
-          <button
-            key={mode}
-            type="button"
-            aria-pressed={state.inspect === mode}
-            onClick={() => store.dispatch({ type: "inspect.changed", mode })}
-          >
-            {label}
-          </button>
-        ))}
+      <div class="vf-tools">
+        <div class="inspect" data-testid="preview-inspect" role="group" aria-label="预览取景">
+          {INSPECT_MODES.map(({ mode, label }) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={state.inspect === mode}
+              onClick={() => store.dispatch({ type: "inspect.changed", mode })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <FocusPeakingControl state={state} />
       </div>
-      <FocusPeakingControl state={state} />
 
       <section class="overlay-card" aria-labelledby="raw-imu-heading">
         <h2 id="raw-imu-heading" class="eyebrow">

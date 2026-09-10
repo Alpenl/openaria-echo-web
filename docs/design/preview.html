@@ -1,0 +1,1087 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Echo Web v2 · 相机仪表设计稿</title><style>
+body{margin:0;background:#1b1c1d;-webkit-font-smoothing:antialiased}
+
+          body { margin:0; background:#1b1c1d; font-family: Helvetica, "Helvetica Neue", system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+          a { color:#8EC5FF; } a:hover { color:#F0F3F4; }
+          .frame { position:absolute; display:flex; flex-direction:column; gap:10px; }
+          .flabel { display:flex; align-items:baseline; gap:10px; color:#EDEAE4; font-size:13px; font-weight:600; cursor:grab; }
+          .flabel span { color:#8b8f92; font-size:11px; font-weight:400; font-family: ui-monospace, Menlo, monospace; }
+
+          /* ---------------- shell ---------------- */
+          .win { width:1280px; height:812px; background:#000; border:1px solid rgba(255,255,255,.16);
+            border-radius:12px; overflow:hidden; position:relative; box-sizing:border-box;
+            color:#F0F3F4; font-size:14px; line-height:1.45; font-variant-numeric:tabular-nums; }
+          .win *, .win *::before, .win *::after { box-sizing:border-box; }
+          .win.tall { height:1240px; }
+          .win.med { height:1060px; }
+          .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          .kick { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:10px; letter-spacing:.14em;
+            text-transform:uppercase; color:#5f686c; }
+
+          /* ---------------- viewfinder ---------------- */
+          .w2-vf { position:absolute; inset:0; background:#000; overflow:hidden; }
+          .w2-stripes { position:absolute; inset:0; background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 13px, rgba(255,255,255,0) 13px 26px); }
+          .w2-sbs { position:absolute; left:0; right:0; top:206px; height:360px; display:flex; background:#050708; box-shadow:0 0 0 1px rgba(255,255,255,.06); }
+          .w2-sbs > div { flex:1; position:relative; overflow:hidden; }
+          .w2-sbs > div + div { border-left:1px solid rgba(255,255,255,.15); }
+          .w2-sbs .st { position:absolute; inset:0; background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.06) 0 13px, rgba(255,255,255,0) 13px 26px); }
+          .w2-sbs .eye { position:absolute; left:9px; top:9px; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.16em; color:rgba(255,255,255,.4); }
+          .w2-vftag { position:absolute; left:0; right:0; top:576px; text-align:center; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#4a5155; letter-spacing:.08em; }
+          .w2-empty { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+          .w2-empty .big { font-size:16px; color:#7f878b; }
+
+          /* camera furniture — EVF edge ticks framing the letterbox */
+          .w2-tick { position:absolute; background:rgba(255,255,255,.24); }
+          .w2-tick.t { top:190px; left:50%; width:1px; height:12px; }
+          .w2-tick.b { top:570px; left:50%; width:1px; height:12px; }
+          .w2-tick.l { left:34px; top:386px; width:12px; height:1px; }
+          .w2-tick.r { right:34px; top:386px; width:12px; height:1px; }
+          .w2-ret { position:absolute; left:50%; top:386px; width:20px; height:1px; margin-left:-10px; background:rgba(255,255,255,.26); }
+          .w2-ret::after { content:""; position:absolute; left:9.5px; top:-9px; width:1px; height:20px; background:rgba(255,255,255,.26); }
+          .w2-peakwash { position:absolute; inset:0; background:
+              radial-gradient(circle at 34% 44%, rgba(232,88,255,.15), transparent 32%),
+              radial-gradient(circle at 60% 56%, rgba(232,88,255,.12), transparent 28%); }
+
+          /* ---------------- top strip ---------------- */
+          .w2-top { position:absolute; left:0; right:0; top:0; height:50px; z-index:14; display:flex; align-items:center; gap:13px;
+            padding:0 14px; background:linear-gradient(180deg, rgba(0,0,0,.82), rgba(0,0,0,0)); }
+          .w2-idp { display:flex; align-items:center; gap:8px; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#EDF1F2; }
+          .w2-idp i { width:6px; height:6px; border-radius:50%; background:#46C98A; flex:none; }
+          .w2-idp.warn i { background:#E0A020; } .w2-idp.off i { background:#5f686c; }
+          .w2-stamp { position:relative; display:inline-flex; align-items:center; gap:7px; height:26px; padding:0 11px 0 13px; font-size:13px; font-weight:600; color:#c9d0d3; }
+          .w2-stamp::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#5f686c; }
+          .w2-stamp.rec { color:#FF3B2D; } .w2-stamp.rec::before { background:#FF3B2D; }
+          .w2-stamp.rec b { width:9px; height:9px; background:#FF3B2D; display:block; }
+          .w2-stamp.warn { color:#E0A020; } .w2-stamp.warn::before { background:#E0A020; }
+          .w2-top .facts { margin-left:auto; display:flex; align-items:center; gap:16px; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#9aa3a7; }
+          .w2-top .facts b { color:#EDF1F2; font-weight:500; }
+          .w2-cm { display:inline-flex; align-items:center; height:24px; padding:0 4px 1px; background:transparent; border:0;
+            border-bottom:1px solid rgba(255,255,255,.22); color:inherit; font:inherit; }
+          .w2-cm.on { color:#8EC5FF; border-bottom-color:#8EC5FF; }
+          .w2-link { display:inline-flex; align-items:center; gap:6px; }
+          .w2-link::before { content:""; width:6px; height:6px; border-radius:50%; background:#46C98A; }
+          .w2-link.warn { color:#E0A020; } .w2-link.warn::before { background:#E0A020; }
+          .w2-tbtn { width:38px; height:38px; flex:none; display:flex; align-items:center; justify-content:center;
+            border:1px solid rgba(255,255,255,.16); border-radius:5px; color:#c9d0d3; background:transparent; }
+          .w2-tbtn svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+          .w2-tbtn.on { background:#F0F3F4; color:#07090a; border-color:#F0F3F4; }
+
+          /* ---------------- hazard ---------------- */
+          .w2-haz { position:absolute; left:0; right:0; top:50px; z-index:13; display:flex; align-items:center; gap:12px;
+            height:38px; padding-right:16px; background:rgba(8,10,11,.94);
+            border-top:1px solid rgba(255,59,45,.5); border-bottom:1px solid rgba(255,59,45,.5); }
+          .w2-haz .bar { width:14px; align-self:stretch; flex:none; background:repeating-linear-gradient(45deg, transparent 0 5px, rgba(255,59,45,.55) 5px 10px); }
+          .w2-haz p { margin:0; font-size:12px; color:#f0d0cd; }
+          .w2-haz .os { font-weight:700; color:#FF3B2D; border-bottom:2px solid #FF3B2D; }
+          .w2-haz .sid { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#9aa3a7; }
+          .w2-haz .go { margin-left:auto; font-size:12px; color:#EDF1F2; }
+
+          /* ---------------- viewfinder toolbar (top-left, horizontal) ---------------- */
+          .w2-tools { position:absolute; left:14px; top:60px; z-index:11; display:flex; align-items:stretch; gap:8px; }
+          .w2-segh { display:flex; background:rgba(10,12,13,.86); border:1px solid rgba(255,255,255,.16); border-radius:6px; overflow:hidden; }
+          .w2-segh button { min-width:50px; padding:0 12px; height:38px; background:transparent; border:0; border-left:1px solid rgba(255,255,255,.09); color:#9aa3a7; font-size:12px; }
+          .w2-segh button:first-child { border-left:0; }
+          .w2-segh button.on { background:#F0F3F4; color:#07090a; font-weight:700; }
+          .w2-t2 { height:38px; padding:0 10px; display:flex; align-items:center; gap:7px; background:rgba(10,12,13,.86);
+            border:1px solid rgba(255,255,255,.16); border-radius:6px; color:#9aa3a7; font-family: ui-monospace, Menlo, monospace; font-size:11px; }
+          .w2-t2 svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+          .w2-t2.on { background:#F0F3F4; color:#07090a; border-color:#F0F3F4; }
+          .w2-t2.peak.on { background:#E858FF; color:#0a0410; border-color:#E858FF; }
+          .w2-t2.dim { color:#4a5155; }
+          .w2-hs { width:78px; height:4px; border-radius:3px; background:rgba(255,255,255,.16); position:relative; }
+          .w2-hs i { position:absolute; left:0; top:0; bottom:0; background:#E858FF; border-radius:3px; }
+          .w2-hs.on i { background:#0a0410; }
+
+          /* ---------------- imu ticker (one line, bottom-left) ---------------- */
+          .w2-imu { position:absolute; left:14px; bottom:150px; z-index:11; padding:8px 12px; display:flex; align-items:center; gap:14px;
+            background:rgba(10,12,13,.86); border:1px solid rgba(255,255,255,.12); border-radius:6px;
+            font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; }
+          .w2-imu .k { letter-spacing:.14em; text-transform:uppercase; }
+          .w2-imu .g { display:flex; gap:7px; }
+          .w2-imu .g b { color:#7FE3F5; font-weight:500; }
+          .w2-imu .g b.warn { color:#E0A020; }
+
+          /* ---------------- deck ---------------- */
+          .w2-deck { position:absolute; left:0; right:0; bottom:0; height:136px; z-index:12; display:flex; align-items:center; gap:24px;
+            padding:0 22px; background:#0a0c0d; border-top:1px solid rgba(255,255,255,.16); }
+          .w2-deckl { display:flex; align-items:center; gap:16px; flex:none; }
+          .w2-modes { display:flex; flex-direction:column; align-items:center; gap:8px; }
+          .w2-modeseg { display:flex; border:1px solid rgba(255,255,255,.16); border-radius:5px; overflow:hidden; }
+          .w2-modeseg span { padding:4px 12px; font-family: ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#7f878b; border-left:1px solid rgba(255,255,255,.10); }
+          .w2-modeseg span:first-child { border-left:0; }
+          .w2-modeseg span.on { background:rgba(255,255,255,.14); color:#F0F3F4; font-weight:700; }
+          .w2-modeseg span.dim { color:#4a5155; }
+          .w2-shutter { width:74px; height:74px; border-radius:50%; border:4px solid rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center; }
+          .w2-shutter b { width:56px; height:56px; border-radius:50%; background:#FF3B2D; display:block; }
+          .w2-shutter.rec b { width:28px; height:28px; border-radius:6px; }
+          .w2-shutter.off { border-color:rgba(255,255,255,.24); }
+          .w2-shutter.off b { background:#3a1512; }
+          .w2-deckc { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:6px; }
+          .w2-deckc .nm { font-size:18px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .w2-deckc .uid { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; }
+          .w2-namein { height:42px; max-width:440px; padding:0 12px; display:flex; align-items:center; background:rgba(255,255,255,.05);
+            border:1px solid rgba(255,255,255,.16); border-radius:5px; color:#5f686c; font-size:15px; }
+          .w2-lockline { font-size:12px; color:#E0A020; }
+          .w2-ro { display:flex; flex:none; align-items:flex-end; }
+          .w2-ro > div { padding:0 20px; border-left:1px solid rgba(255,255,255,.10); }
+          .w2-ro > div:first-child { border-left:0; }
+          .w2-ro .k { display:block; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; margin-bottom:4px; }
+          .w2-ro .v { font-family: ui-monospace, Menlo, monospace; font-size:22px; color:#7FE3F5; white-space:nowrap; }
+          .w2-ro .v.idle { color:#4a5155; }
+
+          /* ---------------- panel ---------------- */
+          .w2-panel { position:absolute; top:50px; right:0; bottom:0; width:452px; z-index:30; display:flex; flex-direction:column;
+            background:#0b0d0e; border-left:1px solid rgba(255,255,255,.16); }
+          .w2-phd { height:60px; flex:none; display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid rgba(255,255,255,.16); }
+          .w2-phd .ttl { font-size:16px; font-weight:600; }
+          .w2-phd .sp { flex:1; }
+          .w2-ib { width:38px; height:38px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.16); border-radius:5px; color:#c9d0d3; }
+          .w2-ib svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+          .w2-pbd { flex:1 1 auto; min-height:0; overflow:hidden; }
+          .w2-sec { padding:18px 16px; border-bottom:1px solid rgba(255,255,255,.09); }
+          .w2-sech { display:flex; align-items:center; gap:9px; margin-bottom:13px; font-family: ui-monospace, Menlo, monospace;
+            font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:#5f686c; }
+          .w2-sech::before { content:""; width:3px; height:12px; background:#5f686c; display:block; flex:none; }
+          .w2-note { font-size:12px; color:#5f686c; margin:12px 0 0; text-wrap:pretty; }
+
+          .w2-stamps { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+          .w2-vs { border:1px solid rgba(255,255,255,.16); border-radius:5px; padding:12px; display:flex; flex-direction:column; gap:7px; }
+          .w2-vs .lb { font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#5f686c; }
+          .w2-vs .vv { font-size:19px; font-weight:700; letter-spacing:.01em; }
+          .w2-vs .sub { font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#5f686c; }
+          .w2-vs.ok { border-color:rgba(70,201,138,.45); } .w2-vs.ok .vv { color:#46C98A; }
+          .w2-vs.bad { border-color:rgba(255,59,45,.45); } .w2-vs.bad .vv { color:#FF3B2D; }
+          .w2-vs.warn { border-color:rgba(224,160,32,.45); } .w2-vs.warn .vv { color:#E0A020; }
+
+          .w2-dl { display:grid; grid-template-columns:auto 1fr; gap:9px 16px; }
+          .w2-dl dt { font-size:13px; color:#9aa3a7; }
+          .w2-dl dd { margin:0; font-family: ui-monospace, Menlo, monospace; font-size:12px; text-align:right; color:#EDF1F2; overflow-wrap:anywhere; }
+          .w2-dl dd.hash { font-size:10px; color:#5f686c; }
+          .w2-dl dd.ok { color:#46C98A; } .w2-dl dd.warn { color:#E0A020; } .w2-dl dd.bad { color:#FF3B2D; } .w2-dl dd.mut { color:#5f686c; }
+
+          .w2-stat4 { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.09); border-radius:5px; overflow:hidden; }
+          .w2-stat4 > div { background:#0b0d0e; padding:11px 13px; }
+          .w2-stat4 .k { font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; }
+          .w2-stat4 .v { font-family: ui-monospace, Menlo, monospace; font-size:15px; color:#EDF1F2; margin-top:3px; }
+          .w2-stat4 .v.live { color:#7FE3F5; } .w2-stat4 .v.ok { color:#46C98A; } .w2-stat4 .v.warn { color:#E0A020; }
+
+          .w2-bar { height:6px; border-radius:3px; background:rgba(255,255,255,.09); overflow:hidden; }
+          .w2-bar i { display:block; height:100%; background:#9aa3a7; }
+          .w2-barcap { display:flex; justify-content:space-between; margin-top:6px; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#5f686c; }
+
+          .w2-slider { height:6px; border-radius:3px; background:rgba(255,255,255,.12); position:relative; margin:6px 0 4px; }
+          .w2-slider i { position:absolute; left:0; top:0; bottom:0; width:50%; background:#7FE3F5; border-radius:3px; }
+          .w2-slider i::after { content:""; position:absolute; right:-7px; top:-5px; width:15px; height:15px; border-radius:50%; background:#7FE3F5; }
+
+          .w2-chip { display:inline-flex; align-items:center; min-height:32px; padding:5px 13px; border:1px solid rgba(255,255,255,.16); border-radius:4px; color:#9aa3a7; font-size:12px; }
+          .w2-chip.solid { background:#F0F3F4; border-color:#F0F3F4; color:#07090a; font-weight:600; }
+          .w2-row { display:flex; gap:8px; flex-wrap:wrap; }
+
+          .w2-btn { min-height:44px; display:flex; align-items:center; justify-content:center; padding:8px 14px; border-radius:4px; font-size:13px; }
+          .w2-btn.pri { background:#F0F3F4; color:#07090a; font-weight:600; }
+          .w2-btn.sec { background:transparent; border:1px solid rgba(255,255,255,.16); color:#EDF1F2; }
+          .w2-btn.danger { background:transparent; border:1px solid #FF3B2D; color:#FF3B2D; }
+
+          .w2-srow { position:relative; display:flex; flex-direction:column; gap:5px; padding:13px 16px 13px 19px; border-bottom:1px solid rgba(255,255,255,.07); }
+          .w2-srow::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#46C98A; }
+          .w2-srow.warn::before { background:#E0A020; } .w2-srow.bad::before { background:#FF3B2D; }
+          .w2-srow .top { display:flex; align-items:baseline; gap:10px; }
+          .w2-srow .nm { flex:1; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .w2-srow .vd { flex:none; font-size:12px; }
+          .w2-srow .vd.ok { color:#46C98A; } .w2-srow .vd.bad { color:#FF3B2D; } .w2-srow .vd.warn { color:#E0A020; }
+          .w2-srow .mt { display:flex; gap:9px; font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; min-width:0; }
+          .w2-srow .mt .uid { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
+          .w2-pmore { width:100%; padding:14px; background:transparent; border:0; border-top:1px solid rgba(255,255,255,.12); color:#9aa3a7; font-size:13px; }
+
+          .w2-art { display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid rgba(255,255,255,.07); }
+          .w2-art .bd { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+          .w2-art .rolebadge { align-self:flex-start; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.08em; text-transform:uppercase;
+            color:#9aa3a7; border:1px solid rgba(255,255,255,.14); border-radius:3px; padding:1px 5px; }
+          .w2-art .pth { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .w2-art .sz { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; flex:none; }
+          .w2-art .dl { flex:none; display:flex; align-items:center; gap:6px; min-height:34px; padding:0 11px; border:1px solid rgba(255,255,255,.16); border-radius:4px; color:#8EC5FF; font-size:12px; }
+          .w2-art .dl svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+
+          /* network */
+          .w2-netcur { margin:16px 16px 0; padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:6px; background:rgba(255,255,255,.02); }
+          .w2-netcur .r1 { display:flex; align-items:center; justify-content:space-between; font-family: ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; }
+          .w2-netcur .r1 b { color:#46C98A; }
+          .w2-netcur .ssid { font-size:20px; font-weight:600; margin-top:6px; }
+          .w2-netcur .meta { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; margin-top:2px; }
+          .w2-netcur .stx { font-size:12px; color:#9aa3a7; margin-top:9px; }
+          .w2-wl { margin:0 16px; border:1px solid rgba(255,255,255,.14); border-radius:6px; overflow:hidden; background:#121517; }
+          .w2-wo { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:56px; padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.09); background:#121517; border-left:0; color:#F0F3F4; text-align:left; }
+          .w2-wo:last-child { border-bottom:0; }
+          .w2-wo.on { border-left:3px solid #8FD4FF; padding-left:9px; background:#172227; }
+          .w2-wo .id b { font-size:14px; font-weight:600; }
+          .w2-wo .id span { display:block; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#5f686c; margin-top:2px; }
+          .w2-wo .rt { display:flex; align-items:center; gap:9px; flex:none; }
+          .w2-cur { font-family: ui-monospace, Menlo, monospace; font-size:9px; padding:1px 5px; border:1px solid rgba(255,255,255,.16); border-radius:3px; color:#9aa3a7; }
+          .w2-bars { display:flex; align-items:flex-end; gap:2px; height:14px; }
+          .w2-bars i { width:4px; background:rgba(255,255,255,.18); border-radius:1px 1px 0 0; }
+          .w2-bars i:nth-child(1){height:4px} .w2-bars i:nth-child(2){height:7px} .w2-bars i:nth-child(3){height:10px} .w2-bars i:nth-child(4){height:14px}
+          .w2-bars i.a { background:#9aa3a7; }
+          .w2-wman { justify-content:flex-start; gap:10px; min-height:44px; color:#9aa3a7; font-size:13px; }
+          .w2-wman span:first-child { width:16px; text-align:center; color:#F0F3F4; font-size:16px; }
+          .w2-fields { margin:12px 16px; padding:14px; border:1px solid rgba(255,255,255,.14); border-radius:6px; background:rgba(255,255,255,.02); display:flex; flex-direction:column; gap:10px; }
+          .w2-fields .lb { font-size:12px; color:#9aa3a7; }
+          .w2-fields .in { height:42px; padding:0 11px; display:flex; align-items:center; background:#121517; border:1px solid rgba(255,255,255,.16); border-radius:4px; font-family: ui-monospace, Menlo, monospace; font-size:13px; }
+          .w2-netact { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 16px 14px; }
+          .w2-prog { margin:0 16px 14px; padding:12px; border-left:3px solid #E0A020; background:#121517; display:grid; grid-template-columns:1fr auto; gap:6px 12px; }
+          .w2-prog .track { grid-column:1/-1; height:5px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; }
+          .w2-prog .track i { display:block; height:100%; width:72%; background:#9aa3a7; }
+          .w2-prog strong { font-size:13px; font-weight:600; }
+          .w2-prog span { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#9aa3a7; }
+          .w2-det { border-top:1px solid rgba(255,255,255,.12); }
+          .w2-det .sm { padding:12px 16px; font-size:12px; color:#9aa3a7; }
+          .w2-det dl { margin:0; padding:0 16px 16px; display:grid; grid-template-columns:auto 1fr; gap:8px 16px; }
+          .w2-det dt { font-size:12px; color:#5f686c; }
+          .w2-det dd { margin:0; font-family: ui-monospace, Menlo, monospace; font-size:11px; text-align:right; color:#9aa3a7; }
+
+          /* credential / connect */
+          .w2-cred { position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.86); }
+          .w2-credcard { width:460px; padding:26px; background:#0b0d0e; border:1px solid rgba(255,255,255,.16); border-radius:8px; display:flex; flex-direction:column; gap:14px; }
+          .w2-credcard h3 { margin:0; font-size:19px; font-weight:600; }
+          .w2-credcard p { margin:0; font-size:13px; color:#9aa3a7; text-wrap:pretty; }
+          .w2-credcard .in { height:44px; padding:0 12px; display:flex; align-items:center; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.16); border-radius:5px; font-family: ui-monospace, Menlo, monospace; font-size:14px; letter-spacing:.2em; }
+          .w2-credmark { display:flex; align-items:center; gap:10px; }
+          .w2-credmark span { width:22px; height:22px; border:2px solid #F0F3F4; flex:none; }
+          .w2-credmark b { font-family: ui-monospace, Menlo, monospace; font-size:13px; letter-spacing:.05em; }
+
+          .w2-dim { opacity:.26; }
+
+          /* notes / board */
+          .note { width:2140px; color:#c8c5bf; font-size:13px; line-height:21px; }
+          .note h1 { font-size:22px; color:#EDEAE4; margin:0 0 10px; }
+          .note h2 { font-size:14px; color:#EDEAE4; margin:16px 0 6px; }
+          .note code { font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#8EC5FF; }
+          .note ul { margin:0; padding-left:18px; }
+          .cols { display:flex; gap:44px; }
+          .cols > div { flex:1; }
+
+          .board { width:560px; display:flex; flex-direction:column; gap:16px; background:#0b0d0e; border:1px solid rgba(255,255,255,.14); border-radius:12px; padding:18px; }
+          .brow { display:flex; flex-direction:column; gap:9px; }
+          .brow .sl { font-family: ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; }
+          .sw { display:flex; gap:8px; flex-wrap:wrap; }
+          .sq { width:64px; display:flex; flex-direction:column; gap:4px; font-family: ui-monospace, Menlo, monospace; font-size:9px; color:#5f686c; }
+          .sq b { display:block; height:32px; border-radius:4px; border:1px solid rgba(255,255,255,.14); }
+        
+</style></head><body>
+      <helmet data-dc-atomics>
+        <meta name="design_doc_mode" content="canvas" />
+        <style>
+          body { margin:0; background:#1b1c1d; font-family: Helvetica, "Helvetica Neue", system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+          a { color:#8EC5FF; } a:hover { color:#F0F3F4; }
+          .frame { position:absolute; display:flex; flex-direction:column; gap:10px; }
+          .flabel { display:flex; align-items:baseline; gap:10px; color:#EDEAE4; font-size:13px; font-weight:600; cursor:grab; }
+          .flabel span { color:#8b8f92; font-size:11px; font-weight:400; font-family: ui-monospace, Menlo, monospace; }
+
+          /* ---------------- shell ---------------- */
+          .win { width:1280px; height:812px; background:#000; border:1px solid rgba(255,255,255,.16);
+            border-radius:12px; overflow:hidden; position:relative; box-sizing:border-box;
+            color:#F0F3F4; font-size:14px; line-height:1.45; font-variant-numeric:tabular-nums; }
+          .win *, .win *::before, .win *::after { box-sizing:border-box; }
+          .win.tall { height:1240px; }
+          .win.med { height:1060px; }
+          .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          .kick { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:10px; letter-spacing:.14em;
+            text-transform:uppercase; color:#5f686c; }
+
+          /* ---------------- viewfinder ---------------- */
+          .w2-vf { position:absolute; inset:0; background:#000; overflow:hidden; }
+          .w2-stripes { position:absolute; inset:0; background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 13px, rgba(255,255,255,0) 13px 26px); }
+          .w2-sbs { position:absolute; left:0; right:0; top:206px; height:360px; display:flex; background:#050708; box-shadow:0 0 0 1px rgba(255,255,255,.06); }
+          .w2-sbs > div { flex:1; position:relative; overflow:hidden; }
+          .w2-sbs > div + div { border-left:1px solid rgba(255,255,255,.15); }
+          .w2-sbs .st { position:absolute; inset:0; background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.06) 0 13px, rgba(255,255,255,0) 13px 26px); }
+          .w2-sbs .eye { position:absolute; left:9px; top:9px; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.16em; color:rgba(255,255,255,.4); }
+          .w2-vftag { position:absolute; left:0; right:0; top:576px; text-align:center; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#4a5155; letter-spacing:.08em; }
+          .w2-empty { position:absolute; left:0; right:0; top:0; bottom:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+          .w2-empty .big { font-size:16px; color:#7f878b; }
+
+          /* camera furniture — EVF edge ticks framing the letterbox */
+          .w2-tick { position:absolute; background:rgba(255,255,255,.24); }
+          .w2-tick.t { top:190px; left:50%; width:1px; height:12px; }
+          .w2-tick.b { top:570px; left:50%; width:1px; height:12px; }
+          .w2-tick.l { left:34px; top:386px; width:12px; height:1px; }
+          .w2-tick.r { right:34px; top:386px; width:12px; height:1px; }
+          .w2-ret { position:absolute; left:50%; top:386px; width:20px; height:1px; margin-left:-10px; background:rgba(255,255,255,.26); }
+          .w2-ret::after { content:""; position:absolute; left:9.5px; top:-9px; width:1px; height:20px; background:rgba(255,255,255,.26); }
+          .w2-peakwash { position:absolute; inset:0; background:
+              radial-gradient(circle at 34% 44%, rgba(232,88,255,.15), transparent 32%),
+              radial-gradient(circle at 60% 56%, rgba(232,88,255,.12), transparent 28%); }
+
+          /* ---------------- top strip ---------------- */
+          .w2-top { position:absolute; left:0; right:0; top:0; height:50px; z-index:14; display:flex; align-items:center; gap:13px;
+            padding:0 14px; background:linear-gradient(180deg, rgba(0,0,0,.82), rgba(0,0,0,0)); }
+          .w2-idp { display:flex; align-items:center; gap:8px; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#EDF1F2; }
+          .w2-idp i { width:6px; height:6px; border-radius:50%; background:#46C98A; flex:none; }
+          .w2-idp.warn i { background:#E0A020; } .w2-idp.off i { background:#5f686c; }
+          .w2-stamp { position:relative; display:inline-flex; align-items:center; gap:7px; height:26px; padding:0 11px 0 13px; font-size:13px; font-weight:600; color:#c9d0d3; }
+          .w2-stamp::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#5f686c; }
+          .w2-stamp.rec { color:#FF3B2D; } .w2-stamp.rec::before { background:#FF3B2D; }
+          .w2-stamp.rec b { width:9px; height:9px; background:#FF3B2D; display:block; }
+          .w2-stamp.warn { color:#E0A020; } .w2-stamp.warn::before { background:#E0A020; }
+          .w2-top .facts { margin-left:auto; display:flex; align-items:center; gap:16px; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#9aa3a7; }
+          .w2-top .facts b { color:#EDF1F2; font-weight:500; }
+          .w2-cm { display:inline-flex; align-items:center; height:24px; padding:0 4px 1px; background:transparent; border:0;
+            border-bottom:1px solid rgba(255,255,255,.22); color:inherit; font:inherit; }
+          .w2-cm.on { color:#8EC5FF; border-bottom-color:#8EC5FF; }
+          .w2-link { display:inline-flex; align-items:center; gap:6px; }
+          .w2-link::before { content:""; width:6px; height:6px; border-radius:50%; background:#46C98A; }
+          .w2-link.warn { color:#E0A020; } .w2-link.warn::before { background:#E0A020; }
+          .w2-tbtn { width:38px; height:38px; flex:none; display:flex; align-items:center; justify-content:center;
+            border:1px solid rgba(255,255,255,.16); border-radius:5px; color:#c9d0d3; background:transparent; }
+          .w2-tbtn svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+          .w2-tbtn.on { background:#F0F3F4; color:#07090a; border-color:#F0F3F4; }
+
+          /* ---------------- hazard ---------------- */
+          .w2-haz { position:absolute; left:0; right:0; top:50px; z-index:13; display:flex; align-items:center; gap:12px;
+            height:38px; padding-right:16px; background:rgba(8,10,11,.94);
+            border-top:1px solid rgba(255,59,45,.5); border-bottom:1px solid rgba(255,59,45,.5); }
+          .w2-haz .bar { width:14px; align-self:stretch; flex:none; background:repeating-linear-gradient(45deg, transparent 0 5px, rgba(255,59,45,.55) 5px 10px); }
+          .w2-haz p { margin:0; font-size:12px; color:#f0d0cd; }
+          .w2-haz .os { font-weight:700; color:#FF3B2D; border-bottom:2px solid #FF3B2D; }
+          .w2-haz .sid { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#9aa3a7; }
+          .w2-haz .go { margin-left:auto; font-size:12px; color:#EDF1F2; }
+
+          /* ---------------- viewfinder toolbar (top-left, horizontal) ---------------- */
+          .w2-tools { position:absolute; left:14px; top:60px; z-index:11; display:flex; align-items:stretch; gap:8px; }
+          .w2-segh { display:flex; background:rgba(10,12,13,.86); border:1px solid rgba(255,255,255,.16); border-radius:6px; overflow:hidden; }
+          .w2-segh button { min-width:50px; padding:0 12px; height:38px; background:transparent; border:0; border-left:1px solid rgba(255,255,255,.09); color:#9aa3a7; font-size:12px; }
+          .w2-segh button:first-child { border-left:0; }
+          .w2-segh button.on { background:#F0F3F4; color:#07090a; font-weight:700; }
+          .w2-t2 { height:38px; padding:0 10px; display:flex; align-items:center; gap:7px; background:rgba(10,12,13,.86);
+            border:1px solid rgba(255,255,255,.16); border-radius:6px; color:#9aa3a7; font-family: ui-monospace, Menlo, monospace; font-size:11px; }
+          .w2-t2 svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+          .w2-t2.on { background:#F0F3F4; color:#07090a; border-color:#F0F3F4; }
+          .w2-t2.peak.on { background:#E858FF; color:#0a0410; border-color:#E858FF; }
+          .w2-t2.dim { color:#4a5155; }
+          .w2-hs { width:78px; height:4px; border-radius:3px; background:rgba(255,255,255,.16); position:relative; }
+          .w2-hs i { position:absolute; left:0; top:0; bottom:0; background:#E858FF; border-radius:3px; }
+          .w2-hs.on i { background:#0a0410; }
+
+          /* ---------------- imu ticker (one line, bottom-left) ---------------- */
+          .w2-imu { position:absolute; left:14px; bottom:150px; z-index:11; padding:8px 12px; display:flex; align-items:center; gap:14px;
+            background:rgba(10,12,13,.86); border:1px solid rgba(255,255,255,.12); border-radius:6px;
+            font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; }
+          .w2-imu .k { letter-spacing:.14em; text-transform:uppercase; }
+          .w2-imu .g { display:flex; gap:7px; }
+          .w2-imu .g b { color:#7FE3F5; font-weight:500; }
+          .w2-imu .g b.warn { color:#E0A020; }
+
+          /* ---------------- deck ---------------- */
+          .w2-deck { position:absolute; left:0; right:0; bottom:0; height:136px; z-index:12; display:flex; align-items:center; gap:24px;
+            padding:0 22px; background:#0a0c0d; border-top:1px solid rgba(255,255,255,.16); }
+          .w2-deckl { display:flex; align-items:center; gap:16px; flex:none; }
+          .w2-modes { display:flex; flex-direction:column; align-items:center; gap:8px; }
+          .w2-modeseg { display:flex; border:1px solid rgba(255,255,255,.16); border-radius:5px; overflow:hidden; }
+          .w2-modeseg span { padding:4px 12px; font-family: ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#7f878b; border-left:1px solid rgba(255,255,255,.10); }
+          .w2-modeseg span:first-child { border-left:0; }
+          .w2-modeseg span.on { background:rgba(255,255,255,.14); color:#F0F3F4; font-weight:700; }
+          .w2-modeseg span.dim { color:#4a5155; }
+          .w2-shutter { width:74px; height:74px; border-radius:50%; border:4px solid rgba(255,255,255,.9); display:flex; align-items:center; justify-content:center; }
+          .w2-shutter b { width:56px; height:56px; border-radius:50%; background:#FF3B2D; display:block; }
+          .w2-shutter.rec b { width:28px; height:28px; border-radius:6px; }
+          .w2-shutter.off { border-color:rgba(255,255,255,.24); }
+          .w2-shutter.off b { background:#3a1512; }
+          .w2-deckc { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:6px; }
+          .w2-deckc .nm { font-size:18px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .w2-deckc .uid { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; }
+          .w2-namein { height:42px; max-width:440px; padding:0 12px; display:flex; align-items:center; background:rgba(255,255,255,.05);
+            border:1px solid rgba(255,255,255,.16); border-radius:5px; color:#5f686c; font-size:15px; }
+          .w2-lockline { font-size:12px; color:#E0A020; }
+          .w2-ro { display:flex; flex:none; align-items:flex-end; }
+          .w2-ro > div { padding:0 20px; border-left:1px solid rgba(255,255,255,.10); }
+          .w2-ro > div:first-child { border-left:0; }
+          .w2-ro .k { display:block; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; margin-bottom:4px; }
+          .w2-ro .v { font-family: ui-monospace, Menlo, monospace; font-size:22px; color:#7FE3F5; white-space:nowrap; }
+          .w2-ro .v.idle { color:#4a5155; }
+
+          /* ---------------- panel ---------------- */
+          .w2-panel { position:absolute; top:50px; right:0; bottom:0; width:452px; z-index:30; display:flex; flex-direction:column;
+            background:#0b0d0e; border-left:1px solid rgba(255,255,255,.16); }
+          .w2-phd { height:60px; flex:none; display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid rgba(255,255,255,.16); }
+          .w2-phd .ttl { font-size:16px; font-weight:600; }
+          .w2-phd .sp { flex:1; }
+          .w2-ib { width:38px; height:38px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.16); border-radius:5px; color:#c9d0d3; }
+          .w2-ib svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+          .w2-pbd { flex:1 1 auto; min-height:0; overflow:hidden; }
+          .w2-sec { padding:18px 16px; border-bottom:1px solid rgba(255,255,255,.09); }
+          .w2-sech { display:flex; align-items:center; gap:9px; margin-bottom:13px; font-family: ui-monospace, Menlo, monospace;
+            font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:#5f686c; }
+          .w2-sech::before { content:""; width:3px; height:12px; background:#5f686c; display:block; flex:none; }
+          .w2-note { font-size:12px; color:#5f686c; margin:12px 0 0; text-wrap:pretty; }
+
+          .w2-stamps { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+          .w2-vs { border:1px solid rgba(255,255,255,.16); border-radius:5px; padding:12px; display:flex; flex-direction:column; gap:7px; }
+          .w2-vs .lb { font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#5f686c; }
+          .w2-vs .vv { font-size:19px; font-weight:700; letter-spacing:.01em; }
+          .w2-vs .sub { font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#5f686c; }
+          .w2-vs.ok { border-color:rgba(70,201,138,.45); } .w2-vs.ok .vv { color:#46C98A; }
+          .w2-vs.bad { border-color:rgba(255,59,45,.45); } .w2-vs.bad .vv { color:#FF3B2D; }
+          .w2-vs.warn { border-color:rgba(224,160,32,.45); } .w2-vs.warn .vv { color:#E0A020; }
+
+          .w2-dl { display:grid; grid-template-columns:auto 1fr; gap:9px 16px; }
+          .w2-dl dt { font-size:13px; color:#9aa3a7; }
+          .w2-dl dd { margin:0; font-family: ui-monospace, Menlo, monospace; font-size:12px; text-align:right; color:#EDF1F2; overflow-wrap:anywhere; }
+          .w2-dl dd.hash { font-size:10px; color:#5f686c; }
+          .w2-dl dd.ok { color:#46C98A; } .w2-dl dd.warn { color:#E0A020; } .w2-dl dd.bad { color:#FF3B2D; } .w2-dl dd.mut { color:#5f686c; }
+
+          .w2-stat4 { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.09); border-radius:5px; overflow:hidden; }
+          .w2-stat4 > div { background:#0b0d0e; padding:11px 13px; }
+          .w2-stat4 .k { font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; }
+          .w2-stat4 .v { font-family: ui-monospace, Menlo, monospace; font-size:15px; color:#EDF1F2; margin-top:3px; }
+          .w2-stat4 .v.live { color:#7FE3F5; } .w2-stat4 .v.ok { color:#46C98A; } .w2-stat4 .v.warn { color:#E0A020; }
+
+          .w2-bar { height:6px; border-radius:3px; background:rgba(255,255,255,.09); overflow:hidden; }
+          .w2-bar i { display:block; height:100%; background:#9aa3a7; }
+          .w2-barcap { display:flex; justify-content:space-between; margin-top:6px; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#5f686c; }
+
+          .w2-slider { height:6px; border-radius:3px; background:rgba(255,255,255,.12); position:relative; margin:6px 0 4px; }
+          .w2-slider i { position:absolute; left:0; top:0; bottom:0; width:50%; background:#7FE3F5; border-radius:3px; }
+          .w2-slider i::after { content:""; position:absolute; right:-7px; top:-5px; width:15px; height:15px; border-radius:50%; background:#7FE3F5; }
+
+          .w2-chip { display:inline-flex; align-items:center; min-height:32px; padding:5px 13px; border:1px solid rgba(255,255,255,.16); border-radius:4px; color:#9aa3a7; font-size:12px; }
+          .w2-chip.solid { background:#F0F3F4; border-color:#F0F3F4; color:#07090a; font-weight:600; }
+          .w2-row { display:flex; gap:8px; flex-wrap:wrap; }
+
+          .w2-btn { min-height:44px; display:flex; align-items:center; justify-content:center; padding:8px 14px; border-radius:4px; font-size:13px; }
+          .w2-btn.pri { background:#F0F3F4; color:#07090a; font-weight:600; }
+          .w2-btn.sec { background:transparent; border:1px solid rgba(255,255,255,.16); color:#EDF1F2; }
+          .w2-btn.danger { background:transparent; border:1px solid #FF3B2D; color:#FF3B2D; }
+
+          .w2-srow { position:relative; display:flex; flex-direction:column; gap:5px; padding:13px 16px 13px 19px; border-bottom:1px solid rgba(255,255,255,.07); }
+          .w2-srow::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#46C98A; }
+          .w2-srow.warn::before { background:#E0A020; } .w2-srow.bad::before { background:#FF3B2D; }
+          .w2-srow .top { display:flex; align-items:baseline; gap:10px; }
+          .w2-srow .nm { flex:1; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .w2-srow .vd { flex:none; font-size:12px; }
+          .w2-srow .vd.ok { color:#46C98A; } .w2-srow .vd.bad { color:#FF3B2D; } .w2-srow .vd.warn { color:#E0A020; }
+          .w2-srow .mt { display:flex; gap:9px; font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; min-width:0; }
+          .w2-srow .mt .uid { margin-left:auto; overflow:hidden; text-overflow:ellipsis; }
+          .w2-pmore { width:100%; padding:14px; background:transparent; border:0; border-top:1px solid rgba(255,255,255,.12); color:#9aa3a7; font-size:13px; }
+
+          .w2-art { display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid rgba(255,255,255,.07); }
+          .w2-art .bd { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:3px; }
+          .w2-art .rolebadge { align-self:flex-start; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.08em; text-transform:uppercase;
+            color:#9aa3a7; border:1px solid rgba(255,255,255,.14); border-radius:3px; padding:1px 5px; }
+          .w2-art .pth { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .w2-art .sz { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; flex:none; }
+          .w2-art .dl { flex:none; display:flex; align-items:center; gap:6px; min-height:34px; padding:0 11px; border:1px solid rgba(255,255,255,.16); border-radius:4px; color:#8EC5FF; font-size:12px; }
+          .w2-art .dl svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+
+          /* network */
+          .w2-netcur { margin:16px 16px 0; padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:6px; background:rgba(255,255,255,.02); }
+          .w2-netcur .r1 { display:flex; align-items:center; justify-content:space-between; font-family: ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; }
+          .w2-netcur .r1 b { color:#46C98A; }
+          .w2-netcur .ssid { font-size:20px; font-weight:600; margin-top:6px; }
+          .w2-netcur .meta { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#5f686c; margin-top:2px; }
+          .w2-netcur .stx { font-size:12px; color:#9aa3a7; margin-top:9px; }
+          .w2-wl { margin:0 16px; border:1px solid rgba(255,255,255,.14); border-radius:6px; overflow:hidden; background:#121517; }
+          .w2-wo { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:56px; padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.09); background:#121517; border-left:0; color:#F0F3F4; text-align:left; }
+          .w2-wo:last-child { border-bottom:0; }
+          .w2-wo.on { border-left:3px solid #8FD4FF; padding-left:9px; background:#172227; }
+          .w2-wo .id b { font-size:14px; font-weight:600; }
+          .w2-wo .id span { display:block; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#5f686c; margin-top:2px; }
+          .w2-wo .rt { display:flex; align-items:center; gap:9px; flex:none; }
+          .w2-cur { font-family: ui-monospace, Menlo, monospace; font-size:9px; padding:1px 5px; border:1px solid rgba(255,255,255,.16); border-radius:3px; color:#9aa3a7; }
+          .w2-bars { display:flex; align-items:flex-end; gap:2px; height:14px; }
+          .w2-bars i { width:4px; background:rgba(255,255,255,.18); border-radius:1px 1px 0 0; }
+          .w2-bars i:nth-child(1){height:4px} .w2-bars i:nth-child(2){height:7px} .w2-bars i:nth-child(3){height:10px} .w2-bars i:nth-child(4){height:14px}
+          .w2-bars i.a { background:#9aa3a7; }
+          .w2-wman { justify-content:flex-start; gap:10px; min-height:44px; color:#9aa3a7; font-size:13px; }
+          .w2-wman span:first-child { width:16px; text-align:center; color:#F0F3F4; font-size:16px; }
+          .w2-fields { margin:12px 16px; padding:14px; border:1px solid rgba(255,255,255,.14); border-radius:6px; background:rgba(255,255,255,.02); display:flex; flex-direction:column; gap:10px; }
+          .w2-fields .lb { font-size:12px; color:#9aa3a7; }
+          .w2-fields .in { height:42px; padding:0 11px; display:flex; align-items:center; background:#121517; border:1px solid rgba(255,255,255,.16); border-radius:4px; font-family: ui-monospace, Menlo, monospace; font-size:13px; }
+          .w2-netact { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 16px 14px; }
+          .w2-prog { margin:0 16px 14px; padding:12px; border-left:3px solid #E0A020; background:#121517; display:grid; grid-template-columns:1fr auto; gap:6px 12px; }
+          .w2-prog .track { grid-column:1/-1; height:5px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; }
+          .w2-prog .track i { display:block; height:100%; width:72%; background:#9aa3a7; }
+          .w2-prog strong { font-size:13px; font-weight:600; }
+          .w2-prog span { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#9aa3a7; }
+          .w2-det { border-top:1px solid rgba(255,255,255,.12); }
+          .w2-det .sm { padding:12px 16px; font-size:12px; color:#9aa3a7; }
+          .w2-det dl { margin:0; padding:0 16px 16px; display:grid; grid-template-columns:auto 1fr; gap:8px 16px; }
+          .w2-det dt { font-size:12px; color:#5f686c; }
+          .w2-det dd { margin:0; font-family: ui-monospace, Menlo, monospace; font-size:11px; text-align:right; color:#9aa3a7; }
+
+          /* credential / connect */
+          .w2-cred { position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.86); }
+          .w2-credcard { width:460px; padding:26px; background:#0b0d0e; border:1px solid rgba(255,255,255,.16); border-radius:8px; display:flex; flex-direction:column; gap:14px; }
+          .w2-credcard h3 { margin:0; font-size:19px; font-weight:600; }
+          .w2-credcard p { margin:0; font-size:13px; color:#9aa3a7; text-wrap:pretty; }
+          .w2-credcard .in { height:44px; padding:0 12px; display:flex; align-items:center; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.16); border-radius:5px; font-family: ui-monospace, Menlo, monospace; font-size:14px; letter-spacing:.2em; }
+          .w2-credmark { display:flex; align-items:center; gap:10px; }
+          .w2-credmark span { width:22px; height:22px; border:2px solid #F0F3F4; flex:none; }
+          .w2-credmark b { font-family: ui-monospace, Menlo, monospace; font-size:13px; letter-spacing:.05em; }
+
+          .w2-dim { opacity:.26; }
+
+          /* notes / board */
+          .note { width:2140px; color:#c8c5bf; font-size:13px; line-height:21px; }
+          .note h1 { font-size:22px; color:#EDEAE4; margin:0 0 10px; }
+          .note h2 { font-size:14px; color:#EDEAE4; margin:16px 0 6px; }
+          .note code { font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#8EC5FF; }
+          .note ul { margin:0; padding-left:18px; }
+          .cols { display:flex; gap:44px; }
+          .cols > div { flex:1; }
+
+          .board { width:560px; display:flex; flex-direction:column; gap:16px; background:#0b0d0e; border:1px solid rgba(255,255,255,.14); border-radius:12px; padding:18px; }
+          .brow { display:flex; flex-direction:column; gap:9px; }
+          .brow .sl { font-family: ui-monospace, Menlo, monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#5f686c; }
+          .sw { display:flex; gap:8px; flex-wrap:wrap; }
+          .sq { width:64px; display:flex; flex-direction:column; gap:4px; font-family: ui-monospace, Menlo, monospace; font-size:9px; color:#5f686c; }
+          .sq b { display:block; height:32px; border-radius:4px; border:1px solid rgba(255,255,255,.14); }
+        </style>
+      </helmet>
+
+      <!-- ===================== NOTE ===================== -->
+      <div class="frame note" style="left:40px; top:40px;" data-drags-parent="1">
+        <h1>Open Aria Echo · 浏览器端 v2 —— 相机仪表重构</h1>
+        <p>在 <code>Echo Web 浏览器端还原稿</code>（取自 <code>openaria-echo-web</code> 现状）的基础上完全重排布局。<b>设计语言不动</b>：纯黑取景底、信号色配额、等宽数字、能力未声明不画控件、录制指示常亮无循环动画、Conductor 拥有权威状态。<b>变的是层级与结构</b>——把散落的玻璃盒子收进两条仪表轨与一块实心相机操作台。</p>
+        <div class="cols">
+          <div>
+            <h2>取景器：真正铺满 + 相机取景框</h2>
+            <ul>
+              <li>顶栏是 50 高的<b>渐隐信息条</b>，只压最上沿：机身名 + 链路点、状态印、余量/温度、<code>Wi-Fi</code> 网络入口、链路状态，右端两枚 38 图标键（会话 / 设备）——都收在这一条里，不再占用侧边。</li>
+              <li>四边<b>取景刻度</b>与中心<b>十字线</b>框住 letterbox；双目并置画面加大到接近真实 32:9 的高度，减少上下黑边。</li>
+              <li>状态不再是弱小的方点 chip，改为左侧 3px 色条的<b>状态印</b>：<code>▌待机</code> / <code>▌■ 录制中</code>。</li>
+            </ul>
+            <h2>取景工具收成一条横条</h2>
+            <ul>
+              <li>左上角一排<b>横向工具条</b>：<code>[双目│左眼│右眼]</code> 段选 + 全画幅 + PEAK（内嵌阈值条与数值）——不再是占一整列的竖轨。</li>
+              <li>RAW IMU 收进左下角一行等宽计数器：<code>a … ω … ≈ good</code>。</li>
+              <li>系统入口全在顶栏：会话 / 设备是图标键，网络沿用还原稿的 <code>Wi-Fi</code> 文字入口（带下划线）。</li>
+            </ul>
+          </div>
+          <div>
+            <h2>相机操作台（底部实心区）</h2>
+            <ul>
+              <li>不再是半透明糊在一起的一条：<b>实心 <code>#0a0c0d</code> 台面 + 硬顶边</b>，三区分明。</li>
+              <li>左：<code>录制 | 标定</code> 段选（把「标定录制」按钮并入模式），下面是放大到 74 的<b>快门</b>——空闲红圆 / 录制红方 / 锁定变暗。</li>
+              <li>中：命名（空闲）或 当前会话名 + UUID（录制）。</li>
+              <li>右：<code>时长 / 帧数 / 写入 / 校验</code> 读数，等宽 22，实时走 <code>live</code>、空闲走 <code>ink-3</code>，去掉包边只留细分隔。</li>
+            </ul>
+            <h2>面板：给语义以形状</h2>
+            <ul>
+              <li>会话详情把<b>生产方声明 vs 消费方判断</b>做成并排两枚印章——这是产品的核心语义，必须一眼看到。</li>
+              <li>设备页存储改为<b>容量条</b>；会话台账每行左侧 3px 状态色条 + verdict。</li>
+              <li>每个 section 头部一根 3px tick + 等宽小标题，层级立起来。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 1. 待机 ===================== -->
+      <div class="frame" style="left:40px; top:660px;" data-screen-label="v2 取景待机">
+        <div class="flabel" data-drags-parent="1">取景器 · 待机 <span>双目 · 主屏</span></div>
+        <div class="win">
+          <div class="w2-vf">
+            <div class="w2-sbs"><div><div class="st"></div><span class="eye">L</span></div><div><div class="st"></div><span class="eye">R</span></div></div>
+            <div class="w2-tick t"></div><div class="w2-tick b"></div><div class="w2-tick l"></div><div class="w2-tick r"></div>
+            <div class="w2-ret"></div>
+            <div class="w2-vftag">设备实时预览 · 双目并置 32:9 · CONTAIN</div>
+          </div>
+          <div class="w2-top">
+            <div class="w2-idp"><i></i>rp-ylx-0713</div>
+            <span class="w2-stamp">待机</span>
+            <div class="facts">
+              <span><b>412.6</b> GiB · 可写</span>
+              <span><b>48.2</b> °C</span>
+              <button class="w2-cm">Wi-Fi</button>
+              <span class="w2-link">已连接</span>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-tools">
+            <div class="w2-segh"><button class="on">双目</button><button>左眼</button><button>右眼</button></div>
+            <div class="w2-t2"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>全画幅</div>
+            <div class="w2-t2 peak"><svg viewBox="0 0 24 24"><path d="M4 16l5-7 4 5 3-3 4 5"/></svg>PEAK<span class="w2-hs"><i style="width:50%"></i></span>128</div>
+          </div>
+          <div class="w2-imu">
+            <span class="k">Raw IMU</span>
+            <span class="g">a<b>12.0 -3.0 981.0</b></span>
+            <span class="g">ω<b>0.0 1.0 -2.0</b></span>
+            <span class="g">≈<b>good</b></span>
+          </div>
+          <div class="w2-deck">
+            <div class="w2-deckl">
+              <div class="w2-modes">
+                <div class="w2-modeseg"><span class="on">录制</span><span>标定</span></div>
+                <div class="w2-shutter"><b></b></div>
+              </div>
+            </div>
+            <div class="w2-deckc">
+              <span class="kick">命名 · 可选</span>
+              <div class="w2-namein">例如：走廊采集 01</div>
+            </div>
+            <div class="w2-ro">
+              <div><span class="k">时长</span><span class="v idle">0.0</span></div>
+              <div><span class="k">帧数</span><span class="v idle">0</span></div>
+              <div><span class="k">写入 MiB</span><span class="v idle">0.0</span></div>
+              <div><span class="k">校验</span><span class="v idle">--</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 2. 录制中 ===================== -->
+      <div class="frame" style="left:1460px; top:660px;" data-screen-label="v2 录制中">
+        <div class="flabel" data-drags-parent="1">取景器 · 录制中 <span>快门变方 · 读数走 live</span></div>
+        <div class="win">
+          <div class="w2-vf">
+            <div class="w2-sbs"><div><div class="st"></div><span class="eye">L</span></div><div><div class="st"></div><span class="eye">R</span></div></div>
+            <div class="w2-peakwash"></div>
+            <div class="w2-tick t"></div><div class="w2-tick b"></div><div class="w2-tick l"></div><div class="w2-tick r"></div>
+            <div class="w2-ret"></div>
+            <div class="w2-vftag">设备实时预览 · 双目并置 32:9 · CONTAIN</div>
+          </div>
+          <div class="w2-top">
+            <div class="w2-idp"><i></i>rp-ylx-0713</div>
+            <span class="w2-stamp rec"><b></b>录制中 · 04:12</span>
+            <div class="facts">
+              <span><b>409.1</b> GiB · 可写</span>
+              <span style="color:#E0A020"><b style="color:#E0A020">61.7</b> °C</span>
+              <button class="w2-cm">Wi-Fi</button>
+              <span class="w2-link">已连接</span>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-tools">
+            <div class="w2-segh"><button class="on">双目</button><button>左眼</button><button>右眼</button></div>
+            <div class="w2-t2 dim"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>全画幅</div>
+            <div class="w2-t2 peak on"><svg viewBox="0 0 24 24"><path d="M4 16l5-7 4 5 3-3 4 5"/></svg>PEAK<span class="w2-hs on"><i style="width:62%"></i></span>158</div>
+          </div>
+          <div class="w2-imu">
+            <span class="k">Raw IMU</span>
+            <span class="g">a<b>14.0 -1.0 979.0</b></span>
+            <span class="g">ω<b>0.0 2.0 -1.0</b></span>
+            <span class="g">≈<b class="warn">degraded</b></span>
+          </div>
+          <div class="w2-deck">
+            <div class="w2-deckl">
+              <div class="w2-modes">
+                <div class="w2-modeseg"><span class="on">录制</span><span class="dim">标定</span></div>
+                <div class="w2-shutter rec"><b></b></div>
+              </div>
+            </div>
+            <div class="w2-deckc">
+              <span class="kick">当前会话</span>
+              <span class="nm">走廊采集 03</span>
+              <code class="uid">01J9F3K7QX8N2M4B6C0D5E7A</code>
+            </div>
+            <div class="w2-ro">
+              <div><span class="k">时长 秒</span><span class="v">252.4</span></div>
+              <div><span class="k">帧数</span><span class="v">7524</span></div>
+              <div><span class="k">写入 MiB</span><span class="v">3162.5</span></div>
+              <div><span class="k">校验</span><span class="v idle">--</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 3. 相机未接入 + 危险带 ===================== -->
+      <div class="frame" style="left:2880px; top:660px;" data-screen-label="v2 未接入危险带">
+        <div class="flabel" data-drags-parent="1">相机未接入 · 命令锁定 <span>危险带常驻</span></div>
+        <div class="win">
+          <div class="w2-vf">
+            <div class="w2-empty">
+              <span class="kick">Preview</span>
+              <span class="big">相机未接入</span>
+              <span class="mono" style="font-size:11px;color:#4a5155">机身报告相机未接入 · 旧画面已清除</span>
+            </div>
+          </div>
+          <div class="w2-top">
+            <div class="w2-idp warn"><i></i>rp-ylx-0713</div>
+            <span class="w2-stamp">待机</span>
+            <div class="facts">
+              <span><b>412.6</b> GiB · 可写</span>
+              <span><b>47.9</b> °C</span>
+              <button class="w2-cm">Wi-Fi</button>
+              <span class="w2-link warn">正在连接</span>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-haz">
+            <span class="bar"></span>
+            <p>上一次录制没有成功封存</p>
+            <span class="os">失败</span>
+            <span class="sid">01J9EYB2M0PQ7R3S5T8V1W4X</span>
+            <span class="go">查看 ›</span>
+          </div>
+          <div class="w2-tools" style="top:100px">
+            <div class="w2-segh"><button class="on">双目</button><button>左眼</button><button>右眼</button></div>
+          </div>
+          <div class="w2-deck">
+            <div class="w2-deckl">
+              <div class="w2-modes">
+                <div class="w2-modeseg"><span class="on">录制</span><span class="dim">标定</span></div>
+                <div class="w2-shutter off"><b></b></div>
+              </div>
+            </div>
+            <div class="w2-deckc">
+              <span class="kick">命名 · 可选</span>
+              <div class="w2-namein" style="opacity:.45">例如：走廊采集 01</div>
+              <span class="w2-lockline">相机未接入，录制已锁定</span>
+            </div>
+            <div class="w2-ro">
+              <div><span class="k">时长</span><span class="v idle">0.0</span></div>
+              <div><span class="k">帧数</span><span class="v idle">0</span></div>
+              <div><span class="k">写入 MiB</span><span class="v idle">0.0</span></div>
+              <div><span class="k">校验</span><span class="v idle">--</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 4. 会话台账 ===================== -->
+      <div class="frame" style="left:4300px; top:660px;" data-screen-label="v2 会话台账">
+        <div class="flabel" data-drags-parent="1">会话台账 <span>右抽屉 · 左侧状态色条</span></div>
+        <div class="win">
+          <div class="w2-vf"><div class="w2-stripes w2-dim"></div></div>
+          <div class="w2-top">
+            <div class="w2-idp"><i></i>rp-ylx-0713</div><span class="w2-stamp">待机</span>
+            <div class="facts">
+              <span><b>412.6</b> GiB · 可写</span><span><b>48.2</b> °C</span>
+              <button class="w2-cm">Wi-Fi</button><span class="w2-link">已连接</span>
+              <button class="w2-tbtn on"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-panel">
+            <div class="w2-phd">
+              <span class="kick">Sessions</span><span class="ttl">会话台账</span><span class="sp"></span>
+              <span class="w2-ib"><svg viewBox="0 0 24 24"><path d="M19 8a7.5 7.5 0 1 0 .5 7"/><path d="M19 3v5h-5"/></svg></span>
+              <span class="w2-ib"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+            </div>
+            <div class="w2-sec" style="display:flex;flex-direction:column;gap:11px">
+              <div style="display:flex;align-items:center;gap:9px;height:40px;padding:0 11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:4px;color:#5f686c;font-size:13px">
+                <svg viewBox="0 0 24 24" style="width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.6"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg>搜索会话名或 ID
+              </div>
+              <div class="w2-row">
+                <span class="w2-chip solid">全部</span><span class="w2-chip">已验证可用</span>
+                <span class="w2-chip" style="color:#E0A020">未成功</span>
+                <span class="w2-chip" style="border-color:transparent;color:#5f686c">已载入 24</span>
+              </div>
+            </div>
+            <div class="w2-pbd">
+              <div class="w2-srow">
+                <div class="top"><span class="nm">走廊采集 02</span><span class="vd ok">可用</span></div>
+                <div class="mt"><span>182.4 秒</span><span>4.5 GiB</span><span>已封存</span><span class="uid">01J9F3K7…5E7A</span></div>
+              </div>
+              <div class="w2-srow">
+                <div class="top"><span class="nm">走廊采集 01</span><span class="vd ok">可用</span></div>
+                <div class="mt"><span>301.7 秒</span><span>7.2 GiB</span><span>已封存</span><span class="uid">01J9F2R4…9C1B</span></div>
+              </div>
+              <div class="w2-srow warn">
+                <div class="top"><span class="nm">标定 · take 4</span><span class="vd warn">尚未校验</span></div>
+                <div class="mt"><span>0.6 秒</span><span>0.2 GiB</span><span>abandoned</span><span class="uid">01J9EYB2…1W4X</span></div>
+              </div>
+              <div class="w2-srow bad">
+                <div class="top"><span class="nm">中庭全景 07</span><span class="vd bad">不可用</span></div>
+                <div class="mt"><span>44.2 秒</span><span>1.1 GiB</span><span>已封存</span><span class="uid">01J9EQ8W…3H2D</span></div>
+              </div>
+              <div class="w2-srow">
+                <div class="top"><span class="nm">走廊采集 · 复采</span><span class="vd ok">可用</span></div>
+                <div class="mt"><span>128.9 秒</span><span>3.0 GiB</span><span>已封存</span><span class="uid">01J9EM1K…8F0A</span></div>
+              </div>
+              <button class="w2-pmore">加载更多</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 5. 会话详情 ===================== -->
+      <div class="frame" style="left:5720px; top:660px;" data-screen-label="v2 会话详情">
+        <div class="flabel" data-drags-parent="1">会话详情 <span>并排两枚印章：生产方 / 消费方</span></div>
+        <div class="win tall">
+          <div class="w2-vf"><div class="w2-stripes w2-dim"></div></div>
+          <div class="w2-top">
+            <div class="w2-idp"><i></i>rp-ylx-0713</div><span class="w2-stamp">待机</span>
+            <div class="facts">
+              <span><b>412.6</b> GiB · 可写</span><span><b>48.2</b> °C</span>
+              <button class="w2-cm">Wi-Fi</button><span class="w2-link">已连接</span>
+              <button class="w2-tbtn on"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-panel">
+            <div class="w2-phd">
+              <span class="w2-ib"><svg viewBox="0 0 24 24"><path d="M14 5l-7 7 7 7"/></svg></span>
+              <span class="ttl" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">走廊采集 02</span><span class="sp"></span>
+              <span class="w2-ib"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+            </div>
+            <div class="w2-pbd">
+              <div class="w2-sec">
+                <div class="w2-sech">Outcome</div>
+                <div class="w2-stamps">
+                  <div class="w2-vs ok"><span class="lb">生产方声明</span><span class="vv">SEALED</span><span class="sub">封存 09:58:03</span></div>
+                  <div class="w2-vs ok"><span class="lb">消费方判断</span><span class="vv">USABLE</span><span class="sub">gateway 09:58:40</span></div>
+                </div>
+                <p class="w2-note">sealed 只证明生产方自洽；能否消费由 gateway 对当前字节独立判定，两者不合并。manifest sha256 <span class="mono">9f2c…a7d1</span></p>
+              </div>
+              <div class="w2-sec">
+                <div class="w2-sech">Identity</div>
+                <dl class="w2-dl">
+                  <dt>session</dt><dd>01J9F3K7QX8N2M4B6C0D5E7A</dd>
+                  <dt>take</dt><dd>tk_7c1e · #2</dd>
+                  <dt>continuation_of</dt><dd class="mut">无</dd>
+                  <dt>manifest</dt><dd>mf_7c1e9a04</dd>
+                  <dt>volume</dt><dd>vol_nvme0n1p2</dd>
+                  <dt>capture_mode</dt><dd>standard</dd>
+                </dl>
+              </div>
+              <div class="w2-sec">
+                <div class="w2-sech">Capture</div>
+                <dl class="w2-dl">
+                  <dt>时长</dt><dd>182.4 秒</dd>
+                  <dt>起止</dt><dd>09:55:01 → 09:58:03</dd>
+                  <dt>画面</dt><dd>3840×1080 · 30 fps</dd>
+                  <dt>帧数</dt><dd>5472</dd>
+                  <dt>丢帧</dt><dd class="ok">0</dd>
+                  <dt>视频</dt><dd>h264/mp4 · stereo_sbs</dd>
+                </dl>
+              </div>
+              <div class="w2-sec">
+                <div class="w2-sech">Artifacts · 4</div>
+                <div class="w2-art">
+                  <div class="bd"><span class="rolebadge">primary_video_left</span><span class="pth">video/left.mp4</span><span class="mono" style="font-size:10px;color:#5f686c">sha256:2f9c…b71a</span></div>
+                  <span class="sz">2.2 GiB</span>
+                  <span class="dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                </div>
+                <div class="w2-art">
+                  <div class="bd"><span class="rolebadge">primary_video_right</span><span class="pth">video/right.mp4</span><span class="mono" style="font-size:10px;color:#5f686c">sha256:8d1e…4c02</span></div>
+                  <span class="sz">2.2 GiB</span>
+                  <span class="dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                </div>
+                <div class="w2-art">
+                  <div class="bd"><span class="rolebadge">telemetry_imu</span><span class="pth">imu/imu.jsonl</span><span class="mono" style="font-size:10px;color:#5f686c">sha256:1a77…9e5d</span></div>
+                  <span class="sz">18.4 MiB</span>
+                  <span class="dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                </div>
+                <div class="w2-art">
+                  <div class="bd"><span class="rolebadge">log</span><span class="pth">logs/capture.log</span><span class="mono" style="font-size:10px;color:#5f686c">sha256:c40b…12f8</span></div>
+                  <span class="sz">96.2 KiB</span>
+                  <span class="dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 6. 设备与链路 ===================== -->
+      <div class="frame" style="left:7140px; top:660px;" data-screen-label="v2 设备与链路">
+        <div class="flabel" data-drags-parent="1">设备与链路 <span>存储改容量条</span></div>
+        <div class="win med">
+          <div class="w2-vf"><div class="w2-stripes w2-dim"></div></div>
+          <div class="w2-top">
+            <div class="w2-idp"><i></i>rp-ylx-0713</div><span class="w2-stamp">待机</span>
+            <div class="facts">
+              <span><b>412.6</b> GiB · 可写</span><span><b>48.2</b> °C</span>
+              <button class="w2-cm">Wi-Fi</button><span class="w2-link">已连接</span>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn on"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-panel">
+            <div class="w2-phd">
+              <span class="kick">Device</span><span class="ttl">设备与链路</span><span class="sp"></span>
+              <span class="w2-ib"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+            </div>
+            <div class="w2-pbd">
+              <div class="w2-sec">
+                <div class="w2-sech">Runtime</div>
+                <div class="w2-stat4">
+                  <div><div class="k">温度</div><div class="v">48.2 °C</div></div>
+                  <div><div class="k">相机</div><div class="v ok">已连接</div></div>
+                  <div><div class="k">连接方式</div><div class="v">Wi-Fi</div></div>
+                  <div><div class="k">观测于</div><div class="v" style="font-size:12px">10:22:41</div></div>
+                </div>
+              </div>
+              <div class="w2-sec">
+                <div class="w2-sech">Optics</div>
+                <dl class="w2-dl"><dt>手动焦距</dt><dd>512</dd></dl>
+                <div class="w2-slider"><i style="width:50%"></i></div>
+                <p class="w2-note">范围 0–1023，步进 1；相机声明 focus_auto 时滑杆禁用。</p>
+                <div class="w2-row" style="margin-top:10px"><span class="w2-chip">应用焦距</span><span class="w2-chip">自动对焦</span></div>
+              </div>
+              <div class="w2-sec">
+                <div class="w2-sech">Storage</div>
+                <div class="w2-bar"><i style="width:14%"></i></div>
+                <div class="w2-barcap"><span>已用 64.4 GiB</span><span>可用 412.6 / 477.0 GiB</span></div>
+                <dl class="w2-dl" style="margin-top:12px"><dt>可写</dt><dd class="ok">是</dd><dt>volume</dt><dd>vol_nvme0n1p2</dd></dl>
+              </div>
+              <div class="w2-sec">
+                <div class="w2-sech">Build &amp; Authority</div>
+                <dl class="w2-dl">
+                  <dt>软件包</dt><dd>0.5.3</dd>
+                  <dt>Device API</dt><dd>v4</dd>
+                  <dt>安全 profile</dt><dd>lan-token</dd>
+                  <dt>build id</dt><dd>2026-09-02T18:11Z</dd>
+                  <dt>commit</dt><dd class="hash">a1f77c9</dd>
+                  <dt>硬件指纹</dt><dd class="hash">8c41d0b9f3a2…f92b</dd>
+                  <dt>authority epoch</dt><dd class="hash">ae_01J9E8ZC4T</dd>
+                  <dt>source revision</dt><dd>42</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 7. 网络设置 ===================== -->
+      <div class="frame" style="left:8560px; top:660px;" data-screen-label="v2 网络设置">
+        <div class="flabel" data-drags-parent="1">网络设置 <span>当前连接卡 + 事务条</span></div>
+        <div class="win tall">
+          <div class="w2-vf"><div class="w2-stripes w2-dim"></div></div>
+          <div class="w2-top">
+            <div class="w2-idp"><i></i>rp-ylx-0713</div><span class="w2-stamp">待机</span>
+            <div class="facts">
+              <span><b>412.6</b> GiB · 可写</span><span><b>48.2</b> °C</span>
+              <button class="w2-cm on">Wi-Fi</button><span class="w2-link">已连接</span>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="w2-tbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></button>
+            </div>
+          </div>
+          <div class="w2-panel">
+            <div class="w2-phd">
+              <span class="kick">Network</span><span class="ttl">网络设置</span><span class="sp"></span>
+              <span class="w2-ib"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+            </div>
+            <div class="w2-pbd">
+              <div class="w2-netcur">
+                <div class="r1"><span>当前连接</span><b>已连接</b></div>
+                <div class="ssid">lab-5g</div>
+                <div class="meta">Wi-Fi · 10.42.0.14</div>
+                <div class="stx">配置已保存并验证</div>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 16px 10px">
+                <div class="w2-sech" style="margin-bottom:0">可用网络 · 6</div>
+                <span class="w2-ib" style="width:30px;height:30px"><svg viewBox="0 0 24 24"><path d="M19 8a7.5 7.5 0 1 0 .5 7"/><path d="M19 3v5h-5"/></svg></span>
+              </div>
+              <div class="w2-wl">
+                <button class="w2-wo on"><span class="id"><b>lab-5g</b><span>WPA2</span></span><span class="rt"><span class="w2-cur">当前</span><span class="w2-bars"><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i></span></span></button>
+                <button class="w2-wo"><span class="id"><b>site-mesh</b><span>WPA2 / WPA3</span></span><span class="rt"><span class="w2-bars"><i class="a"></i><i class="a"></i><i class="a"></i><i></i></span></span></button>
+                <button class="w2-wo"><span class="id"><b>office-guest</b><span>开放</span></span><span class="rt"><span class="w2-bars"><i class="a"></i><i class="a"></i><i></i><i></i></span></span></button>
+                <button class="w2-wo"><span class="id"><b>lab-2g</b><span>WPA2</span></span><span class="rt"><span class="w2-bars"><i class="a"></i><i></i><i></i><i></i></span></span></button>
+                <button class="w2-wo w2-wman"><span>+</span><span>手动添加网络</span></button>
+              </div>
+              <div class="w2-fields">
+                <div class="lb">Wi-Fi 密码</div>
+                <div class="in">••••••••••••</div>
+                <div class="w2-btn pri">连接</div>
+              </div>
+              <div class="w2-netact">
+                <div class="w2-btn sec">启用设备热点</div>
+                <div class="w2-btn danger">忘记 Wi-Fi</div>
+              </div>
+              <div class="w2-prog">
+                <div class="track"><i></i></div>
+                <div><strong>正在验证连接</strong><div class="mono" style="font-size:11px;color:#5f686c">切换网络</div></div>
+                <span>8.0 秒</span>
+              </div>
+              <div class="w2-det">
+                <div class="sm">▾ 网络详情</div>
+                <dl>
+                  <dt>默认连接</dt><dd>Wi-Fi</dd>
+                  <dt>Wi-Fi</dt><dd>已连接 / lab-5g / 10.42.0.14</dd>
+                  <dt>设备热点</dt><dd>未启用</dd>
+                  <dt>有线</dt><dd>未连接</dd>
+                  <dt>本机地址</dt><dd>rp-ylx.local:8080</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 8. 首次连接 / 令牌 ===================== -->
+      <div class="frame" style="left:9980px; top:660px;" data-screen-label="v2 首次连接">
+        <div class="flabel" data-drags-parent="1">首次连接 · 访问令牌 <span>模态覆盖全窗</span></div>
+        <div class="win">
+          <div class="w2-vf"><div class="w2-empty w2-dim"><span class="kick">Preview</span><span class="big">等待设备画面</span></div></div>
+          <div class="w2-cred">
+            <div class="w2-credcard">
+              <div class="w2-credmark"><span></span><b>OPEN ARIA ECHO</b></div>
+              <h3>连接机身</h3>
+              <p>这台设备运行在需要认证的 profile 下，使用产品能力前必须提供访问令牌。令牌只用于本机控制链路，不会写入会话。</p>
+              <div class="in">••••••••••••••••••••</div>
+              <div class="w2-btn pri">连接设备</div>
+              <p class="mono" style="font-size:11px;color:#5f686c">http://10.42.0.1:8080 · Device API v4</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== 9. 控件与令牌 ===================== -->
+      <div class="frame" style="left:11400px; top:660px;" data-screen-label="v2 控件与令牌">
+        <div class="flabel" data-drags-parent="1">控件与令牌 <span>沿用 app.css 配额，重排结构</span></div>
+        <div class="board">
+          <div class="brow">
+            <div class="sl">Signal colors · 配额不变</div>
+            <div class="sw">
+              <div class="sq"><b style="background:#000"></b>void</div>
+              <div class="sq"><b style="background:#0a0c0d"></b>deck</div>
+              <div class="sq"><b style="background:#F0F3F4"></b>ink</div>
+              <div class="sq"><b style="background:#9aa3a7"></b>ink-2</div>
+              <div class="sq"><b style="background:#5f686c"></b>ink-3</div>
+              <div class="sq"><b style="background:#FF3B2D"></b>record</div>
+              <div class="sq"><b style="background:#E0A020"></b>caution</div>
+              <div class="sq"><b style="background:#46C98A"></b>positive</div>
+              <div class="sq"><b style="background:#7FE3F5"></b>live</div>
+              <div class="sq"><b style="background:#E858FF"></b>peak</div>
+            </div>
+          </div>
+          <div class="brow">
+            <div class="sl">状态印 · 左 3px 色条</div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+              <span class="w2-stamp">待机</span>
+              <span class="w2-stamp rec"><b></b>录制中 · 04:12</span>
+              <span class="w2-stamp warn">校验中</span>
+            </div>
+          </div>
+          <div class="brow">
+            <div class="sl">快门 · 74 · 空闲红圆 / 录制红方 / 锁定变暗</div>
+            <div style="display:flex;gap:16px;align-items:center">
+              <div class="w2-shutter"><b></b></div>
+              <div class="w2-shutter rec"><b></b></div>
+              <div class="w2-shutter off"><b></b></div>
+            </div>
+          </div>
+          <div class="brow">
+            <div class="sl">取景工具条 · 横向</div>
+            <div class="w2-tools" style="position:static">
+              <div class="w2-segh"><button class="on">双目</button><button>左眼</button><button>右眼</button></div>
+              <div class="w2-t2"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>全画幅</div>
+              <div class="w2-t2 peak on"><svg viewBox="0 0 24 24"><path d="M4 16l5-7 4 5 3-3 4 5"/></svg>PEAK<span class="w2-hs on"><i style="width:55%"></i></span>158</div>
+            </div>
+          </div>
+          <div class="brow">
+            <div class="sl">读数 · 等宽 22 · live / idle</div>
+            <div class="w2-ro" style="background:#0a0c0d;border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:12px 4px">
+              <div><span class="k">时长 秒</span><span class="v">252.4</span></div>
+              <div><span class="k">帧数</span><span class="v">7524</span></div>
+              <div><span class="k">写入 MiB</span><span class="v">3162.5</span></div>
+              <div><span class="k">校验</span><span class="v idle">--</span></div>
+            </div>
+          </div>
+          <div class="brow">
+            <div class="sl">verdict 印章 · 生产方 / 消费方并排</div>
+            <div class="w2-stamps" style="max-width:340px">
+              <div class="w2-vs ok"><span class="lb">生产方声明</span><span class="vv">SEALED</span></div>
+              <div class="w2-vs bad"><span class="lb">消费方判断</span><span class="vv">UNUSABLE</span></div>
+            </div>
+          </div>
+          <div class="brow">
+            <div class="sl">面板按钮 · 主 / 次 / 危险</div>
+            <div style="display:flex;gap:8px"><span class="w2-btn pri" style="flex:1">连接</span><span class="w2-btn sec" style="flex:1">启用设备热点</span><span class="w2-btn danger" style="flex:1">忘记 Wi-Fi</span></div>
+          </div>
+        </div>
+      </div>
+    </body></html>

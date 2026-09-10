@@ -144,29 +144,26 @@ export function SessionDetail({ state }: { state: AppState }) {
       <div class="panel-body">
         <section class="detail-section">
           <span class="eyebrow">OUTCOME</span>
-          <dl class="facts">
-            <div>
+          <dl class="verdict-stamps">
+            <div class="verdict-stamp" data-tone={detail.sealed ? "permit" : "caution"}>
               <dt>生产方声明</dt>
-              <dd data-tone={detail.sealed ? "permit" : "caution"}>
-                {detail.sealed ? "sealed" : "not sealed"}
-              </dd>
+              <dd>{detail.sealed ? "SEALED" : "NOT SEALED"}</dd>
+              <span class="stamp-sub">封存 {formatClock(detail.sealed_at)}</span>
             </div>
-            <div>
+            <div
+              class="verdict-stamp"
+              data-tone={verdict === "usable" ? "permit" : verdict === "unusable" ? "fault" : "caution"}
+            >
               <dt>消费方判断</dt>
-              <dd
-                data-tone={verdict === "usable" ? "permit" : verdict === "unusable" ? "fault" : "caution"}
-              >
-                {verdict ?? "尚未校验"}
-              </dd>
+              <dd>{verdict ? verdict.toUpperCase() : "尚未校验"}</dd>
+              <span class="stamp-sub">
+                {summary?.verification?.verified_at
+                  ? `gateway ${formatClock(summary.verification.verified_at)}`
+                  : "尚未校验"}
+              </span>
             </div>
-            <div>
-              <dt>封存于</dt>
-              <dd>{formatClock(detail.sealed_at)}</dd>
-            </div>
-            <div>
-              <dt>校验于</dt>
-              <dd data-tone="muted">{formatClock(summary?.verification?.verified_at)}</dd>
-            </div>
+          </dl>
+          <dl class="facts">
             <div>
               <dt>manifest sha256</dt>
               <dd class="artifact-hash">{summary?.verification?.manifest_sha256 ?? "--"}</dd>

@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet data-dc-atomics>
+        <meta name="design_doc_mode" content="canvas" />
+        <style>
+          body { margin:0; background:#1b1c1d; font-family: Helvetica, "Helvetica Neue", system-ui, "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+          a { color:#8EC5FF; } a:hover { color:#F0F3F4; }
+          .frame { position:absolute; display:flex; flex-direction:column; gap:10px; }
+          .flabel { display:flex; align-items:baseline; gap:10px; color:#EDEAE4; font-size:13px; font-weight:600; cursor:grab; }
+          .flabel span { color:#8b8f92; font-size:11px; font-weight:400; font-family: ui-monospace, Menlo, monospace; }
+
+          /* ---- browser shell ---- */
+          .win { width:1280px; height:800px; background:#000; border:1px solid rgba(255,255,255,.17); border-radius:12px; overflow:hidden; position:relative; display:flex; flex-direction:column; box-sizing:border-box; color:#F0F3F4; font-size:14px; line-height:20px; font-variant-numeric:tabular-nums; }
+          .win.tall { height:1360px; }
+          .win.med { height:1120px; }
+          .win *, .win *::before, .win *::after { box-sizing:border-box; }
+          .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+          .eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:10px; line-height:14px; letter-spacing:.1em; text-transform:uppercase; color:#838d92; }
+
+          /* ---- topbar ---- */
+          .e-topbar { min-height:60px; flex:none; display:flex; align-items:center; gap:14px; padding:8px 16px; background:rgba(8,10,11,.82); border-bottom:1px solid rgba(255,255,255,.10); }
+          .e-brand { display:flex; align-items:center; gap:10px; }
+          .e-brand-mark { width:20px; height:20px; flex:none; border:2px solid #F0F3F4; }
+          .e-brand-label { font-family: ui-monospace, Menlo, monospace; font-size:13px; white-space:nowrap; }
+          .e-chip { display:inline-flex; align-items:center; gap:8px; flex:none; padding:3px 11px; border:1px solid rgba(255,255,255,.17); border-radius:2px; font-size:14px; font-weight:500; white-space:nowrap; }
+          .e-chip::before { content:""; width:8px; height:8px; flex:none; background:#838d92; }
+          .e-chip.rec { background:#ff3b2d; border-color:#ff3b2d; color:#140604; font-weight:600; }
+          .e-chip.rec::before { background:#140604; }
+          .e-chip.warn { background:#e0a020; border-color:#e0a020; color:#171104; font-weight:600; }
+          .e-chip.warn::before { background:#171104; }
+          .e-chip.blocked { border-color:#ff3b2d; background-image:repeating-linear-gradient(45deg, transparent 0 5px, rgba(255,59,45,.20) 5px 10px); }
+          .e-chip.blocked::before { background:#ff3b2d; }
+          .e-facts { display:flex; align-items:center; gap:16px; margin-left:auto; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#aab3b8; white-space:nowrap; }
+          .e-cm { display:inline-flex; align-items:center; min-height:28px; padding:3px 5px 2px; background:transparent; border:0; border-bottom:1px solid rgba(255,255,255,.17); color:inherit; font:inherit; }
+          .e-cm.on { color:#8EC5FF; border-bottom-color:#8EC5FF; }
+          .e-link { display:inline-flex; align-items:center; gap:6px; }
+          .e-link::before { content:""; width:6px; height:6px; border-radius:50%; background:#46c98a; }
+          .e-link.warn { color:#e0a020; }
+          .e-link.warn::before { background:#e0a020; }
+          .e-ib { display:inline-flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; background:transparent; border:1px solid rgba(255,255,255,.17); border-radius:3px; color:#F0F3F4; }
+          .e-ib.on { background:#F0F3F4; color:#080a0b; border-color:#F0F3F4; }
+          .e-ib.sm { width:36px; height:36px; }
+          .e-ib svg, .e-cm svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+          .e-ib.sm svg { width:17px; height:17px; }
+
+          /* ---- stage / viewfinder ---- */
+          .e-stage { position:relative; flex:1; min-height:0; overflow:hidden; background:#000; }
+          .vfimg { position:absolute; inset:0; background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 12px, rgba(255,255,255,0) 12px 24px); }
+          .e-sbs { position:absolute; left:0; right:0; top:50%; transform:translateY(-50%); height:242px; display:flex; background:#050607; box-shadow:0 0 0 1px rgba(255,255,255,.06); }
+          .e-sbs > div { flex:1; position:relative; overflow:hidden; }
+          .e-sbs > div + div { border-left:1px solid rgba(255,255,255,.16); }
+          .e-sbs .vfimg { background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.06) 0 12px, rgba(255,255,255,0) 12px 24px); }
+          .e-sbs .eye { position:absolute; left:8px; top:8px; z-index:1; font-family: ui-monospace, Menlo, monospace; font-size:9px; letter-spacing:.14em; color:rgba(255,255,255,.44); }
+          .e-vftag { position:absolute; left:0; right:0; bottom:16px; text-align:center; font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#565f63; }
+          .e-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#838d92; }
+          .e-empty .et { font-size:15px; color:#8b9296; }
+
+          .e-peakwash { position:absolute; inset:0; background:
+              radial-gradient(circle at 30% 42%, rgba(232,88,255,.16), transparent 34%),
+              radial-gradient(circle at 62% 55%, rgba(232,88,255,.13), transparent 30%); }
+
+          /* ---- stage-mid overlays (hazard / alert) ---- */
+          .e-stage-mid { position:absolute; left:0; right:0; top:0; z-index:20; display:flex; flex-direction:column; }
+          .e-hazard { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 16px; background:rgba(9,11,12,.93); background-image:repeating-linear-gradient(45deg, transparent 0 5px, rgba(255,59,45,.20) 5px 10px); border-bottom:1px solid #ff3b2d; }
+          .e-hazard .mark { width:12px; height:20px; flex:none; background:#ff3b2d; }
+          .e-hazard p { margin:0; }
+          .e-hazard .outcome { font-weight:600; border-bottom:2px solid #ff3b2d; }
+          .e-hazard .sess { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#aab3b8; word-break:break-all; }
+          .e-tag { display:inline-block; padding:0 6px; border:1px solid rgba(255,255,255,.17); border-radius:2px; font-family: ui-monospace, Menlo, monospace; font-size:11px; line-height:16px; color:#aab3b8; white-space:nowrap; }
+          .e-alert { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 12px; padding:10px 16px; background:rgba(9,11,12,.93); border-bottom:1px solid rgba(255,255,255,.10); border-left:3px solid #ff3b2d; }
+          .e-alert code { font-family: ui-monospace, Menlo, monospace; font-size:12px; padding:0 6px; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.10); border-radius:2px; }
+          .e-alert > span { flex:1 1 260px; min-width:0; }
+          .e-alert time { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#838d92; }
+
+          /* ---- stage-left ---- */
+          .e-stage-left { position:absolute; left:16px; top:16px; z-index:5; display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+          .e-inspect { display:flex; flex-direction:column; background:rgba(8,10,11,.78); border:1px solid rgba(255,255,255,.17); border-radius:3px; overflow:hidden; }
+          .e-inspect button { width:60px; min-height:44px; padding:0 10px; background:transparent; border:0; border-top:1px solid rgba(255,255,255,.17); color:#aab3b8; font-size:13px; }
+          .e-inspect button:first-child { border-top:0; }
+          .e-inspect button.on { background:#F0F3F4; color:#080a0b; font-weight:600; }
+          .e-peak { display:flex; align-items:center; gap:8px; padding:8px; background:rgba(8,10,11,.78); border:1px solid rgba(255,255,255,.17); border-radius:3px; }
+          .e-peak button { flex:none; width:60px; min-height:36px; padding:0 8px; background:transparent; border:1px solid rgba(255,255,255,.17); border-radius:2px; color:#aab3b8; font-family: ui-monospace, Menlo, monospace; font-size:11px; }
+          .e-peak button.on { background:#F0F3F4; border-color:#F0F3F4; color:#080a0b; font-weight:700; }
+          .e-peak button.off { color:#838d92; border-color:rgba(255,255,255,.10); }
+          .e-range { width:112px; height:4px; border-radius:4px; background:rgba(255,255,255,.14); position:relative; flex:none; }
+          .e-range i { position:absolute; inset:0 auto 0 0; width:52%; background:#e858ff; border-radius:4px; }
+          .e-range i::after { content:""; position:absolute; right:-6px; top:-4px; width:12px; height:12px; border-radius:50%; background:#e858ff; }
+          .e-range.dim { opacity:.45; }
+          .e-peak output { width:3ch; flex:none; color:#aab3b8; font-family: ui-monospace, Menlo, monospace; font-size:11px; text-align:right; }
+          .e-ocard { display:flex; flex-direction:column; gap:4px; padding:11px 14px; background:rgba(8,10,11,.78); border:1px solid rgba(255,255,255,.10); border-radius:3px; }
+          .e-imu { display:flex; flex-direction:column; gap:4px; }
+          .e-imu > div { display:flex; align-items:baseline; gap:10px; font-family: ui-monospace, Menlo, monospace; font-size:12px; }
+          .e-imu dt { width:14px; flex:none; color:#838d92; }
+          .e-imu dd { margin:0; color:#7fe3f5; white-space:nowrap; }
+          .e-imu dd.na { color:#e0a020; }
+          .e-crop { display:inline-flex; align-items:center; gap:8px; min-height:36px; padding:6px 12px; background:rgba(8,10,11,.78); border:1px solid rgba(255,255,255,.10); border-radius:3px; color:#aab3b8; font-size:12px; }
+          .e-crop svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+
+          /* ---- bottombar ---- */
+          .e-bottombar { min-height:120px; flex:none; display:flex; align-items:center; gap:18px; padding:14px 16px; background:rgba(9,11,12,.95); border-top:1px solid rgba(255,255,255,.10); }
+          .e-shutter { display:inline-flex; align-items:center; justify-content:center; flex:none; width:76px; height:76px; border-radius:50%; background:#ff3b2d; border:4px solid rgba(255,255,255,.26); }
+          .e-shutter b { width:26px; height:26px; border-radius:50%; background:#fff; display:block; }
+          .e-shutter.rec b { width:26px; height:26px; border-radius:3px; background:#140604; }
+          .e-shutter.off { background:rgba(255,59,45,.32); border-color:rgba(255,255,255,.12); }
+          .e-cbody { display:flex; flex-direction:column; gap:6px; min-width:0; flex:1 1 240px; }
+          .e-nameinput { width:100%; max-width:420px; height:44px; padding:0 12px; display:flex; align-items:center; background:rgba(255,255,255,.055); color:#838d92; border:1px solid rgba(255,255,255,.17); border-radius:3px; font-size:15px; }
+          .e-stitle { font-size:17px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .e-suuid { font-family: ui-monospace, Menlo, monospace; font-size:11px; color:#838d92; }
+          .e-lock { font-size:12px; color:#e0a020; }
+          .e-readout { display:flex; flex:none; gap:1px; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.10); border-radius:3px; overflow:hidden; }
+          .e-readout > div { display:flex; flex-direction:column; gap:1px; padding:9px 16px; background:rgba(8,10,11,.90); }
+          .e-readout dt { font-size:11px; color:#838d92; }
+          .e-readout dd { margin:0; font-family: ui-monospace, Menlo, monospace; font-size:17px; color:#7fe3f5; white-space:nowrap; }
+          .e-readout dd.idle { color:#838d92; }
+          .e-cactions { display:flex; align-items:center; gap:10px; margin-left:auto; flex:none; }
+          .e-cbtn { display:inline-flex; align-items:center; gap:8px; min-height:48px; padding:0 20px; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.17); border-radius:3px; color:#F0F3F4; font-size:15px; white-space:nowrap; }
+          .e-cbtn.off { color:#838d92; border-color:rgba(255,255,255,.10); }
+          .e-cbtn svg { width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+
+          /* ---- panel ---- */
+          .e-panel { position:absolute; top:60px; right:0; bottom:0; width:420px; z-index:40; display:flex; flex-direction:column; background:rgba(9,11,12,.94); border-left:1px solid rgba(255,255,255,.10); }
+          .e-phead { display:flex; align-items:center; gap:10px; flex:none; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.10); }
+          .e-ptitle { font-size:15px; font-weight:500; }
+          .e-ptools { display:flex; flex-direction:column; gap:10px; flex:none; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.10); }
+          .e-search { display:flex; align-items:center; gap:9px; height:40px; padding:0 11px; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.10); border-radius:3px; color:#838d92; font-size:14px; }
+          .e-search svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+          .e-chips { display:flex; flex-wrap:wrap; gap:7px; }
+          .e-fchip { min-height:32px; padding:4px 12px; display:inline-flex; align-items:center; background:transparent; border:1px solid rgba(255,255,255,.17); border-radius:2px; color:#aab3b8; font-size:12px; }
+          .e-fchip.on { background:#F0F3F4; border-color:#F0F3F4; color:#080a0b; font-weight:600; }
+          .e-fchip.caution { color:#e0a020; }
+          .e-fchip.ghost { border-color:transparent; color:#838d92; }
+          .e-pbody { flex:1 1 auto; min-height:0; overflow:hidden; }
+          .e-srow { display:flex; flex-direction:column; gap:6px; width:100%; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.06); text-align:left; }
+          .e-srow.bad { background-image:repeating-linear-gradient(45deg, transparent 0 5px, rgba(224,160,32,.16) 5px 10px); }
+          .e-shead { display:flex; align-items:baseline; gap:10px; min-width:0; }
+          .e-sname { flex:1 1 auto; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .e-verdict { flex:none; font-size:12px; white-space:nowrap; }
+          .e-verdict.usable { color:#46c98a; }
+          .e-verdict.unusable { color:#ff3b2d; }
+          .e-verdict.unknown { color:#e0a020; }
+          .e-smeta { display:flex; align-items:center; gap:10px; min-width:0; font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#838d92; }
+          .e-smeta .producer { color:#aab3b8; }
+          .e-smeta .uuid { flex:1 1 auto; text-align:right; overflow:hidden; text-overflow:ellipsis; }
+          .e-pmore { width:100%; padding:14px; background:transparent; border:0; border-top:1px solid rgba(255,255,255,.10); color:#aab3b8; font-size:13px; }
+
+          .e-sec { padding:14px; border-bottom:1px solid rgba(255,255,255,.06); display:flex; flex-direction:column; gap:10px; }
+          .e-facts2 { display:flex; flex-direction:column; gap:8px; margin:0; }
+          .e-facts2 > div { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+          .e-facts2 dt { font-size:13px; color:#aab3b8; flex:none; }
+          .e-facts2 dd { margin:0; font-family: ui-monospace, Menlo, monospace; font-size:13px; text-align:right; min-width:0; overflow-wrap:anywhere; }
+          .e-facts2 dd.caution { color:#e0a020; }
+          .e-facts2 dd.permit { color:#46c98a; }
+          .e-facts2 dd.fault { color:#ff3b2d; }
+          .e-facts2 dd.muted { color:#838d92; }
+          .e-hash { font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#838d92; word-break:break-all; }
+          .e-note2 { font-size:12px; color:#838d92; text-wrap:pretty; }
+          .e-artifact { display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid rgba(255,255,255,.06); }
+          .e-artifact .ab { display:flex; flex-direction:column; gap:3px; min-width:0; flex:1 1 auto; }
+          .e-arole { font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#aab3b8; }
+          .e-apath { font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+          .e-asize { font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#838d92; flex:none; }
+          .e-dl { display:inline-flex; align-items:center; gap:6px; flex:none; min-height:36px; padding:0 12px; border:1px solid rgba(255,255,255,.17); border-radius:2px; color:#8EC5FF; font-size:13px; }
+          .e-dl.off { color:#838d92; border-color:rgba(255,255,255,.10); }
+          .e-dl svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+
+          .e-rangewide { width:100%; height:4px; border-radius:4px; background:rgba(255,255,255,.14); position:relative; }
+          .e-rangewide i { position:absolute; inset:0 auto 0 0; width:50%; background:#7fe3f5; border-radius:4px; }
+          .e-rangewide i::after { content:""; position:absolute; right:-7px; top:-5px; width:14px; height:14px; border-radius:50%; background:#7fe3f5; }
+          .e-pchip { min-height:32px; padding:4px 12px; display:inline-flex; align-items:center; border:1px solid rgba(255,255,255,.17); border-radius:2px; color:#aab3b8; font-size:12px; }
+
+          /* ---- network ---- */
+          .e-netcur { padding:16px 14px 15px; border-bottom:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.025); }
+          .e-netcur .top { display:flex; align-items:center; justify-content:space-between; color:#838d92; font-size:11px; }
+          .e-netcur .top span:last-child { color:#aab3b8; }
+          .e-netcur strong { display:block; margin-top:4px; font-size:18px; font-weight:600; line-height:24px; }
+          .e-netcur .meta { margin-top:3px; font-family: ui-monospace, Menlo, monospace; color:#838d92; font-size:11px; }
+          .e-netstatus { margin-top:10px; color:#aab3b8; font-size:12px; }
+          .e-nethead { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:54px; padding:8px 14px; }
+          .e-nethead h3 { margin:0; font-size:14px; font-weight:600; }
+          .e-nethead .c { color:#838d92; font-size:11px; margin-left:8px; }
+          .e-wlist { margin:0 14px; overflow:hidden; border:1px solid rgba(255,255,255,.17); border-radius:4px; background:#121517; }
+          .e-wopt { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; min-height:58px; padding:9px 11px; background:#121517; border:0; border-bottom:1px solid rgba(255,255,255,.10); color:#F0F3F4; text-align:left; }
+          .e-wopt:last-child { border-bottom:0; }
+          .e-wopt.on { padding-left:8px; background:#182329; border-left:3px solid #8fd4ff; }
+          .e-wid { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; }
+          .e-wid strong { font-size:14px; font-weight:600; line-height:20px; }
+          .e-wid span { color:#838d92; font-size:11px; }
+          .e-wmeta { display:flex; flex:none; align-items:center; gap:9px; }
+          .e-wcur { padding:1px 5px; border:1px solid rgba(255,255,255,.17); border-radius:2px; color:#aab3b8; font-size:10px; line-height:16px; }
+          .e-sig { display:flex; align-items:center; gap:6px; min-width:51px; color:#aab3b8; font-size:11px; }
+          .e-sig .bars { display:flex; align-items:flex-end; gap:2px; width:22px; height:14px; }
+          .e-sig .bars i { display:block; width:4px; background:rgba(255,255,255,.17); border-radius:1px 1px 0 0; }
+          .e-sig .bars i:nth-child(1){ height:4px; } .e-sig .bars i:nth-child(2){ height:7px; }
+          .e-sig .bars i:nth-child(3){ height:10px; } .e-sig .bars i:nth-child(4){ height:14px; }
+          .e-sig .bars i.a { background:#aab3b8; }
+          .e-wmanual { justify-content:flex-start; min-height:46px; color:#aab3b8; font-size:13px; gap:10px; }
+          .e-wmanual span:first-child { width:18px; color:#F0F3F4; font-size:18px; text-align:center; }
+          .e-netfields { display:flex; flex-direction:column; gap:12px; margin:12px 0; padding:14px; border-top:1px solid rgba(255,255,255,.10); border-bottom:1px solid rgba(255,255,255,.10); background:rgba(255,255,255,.02); }
+          .e-fstack { display:flex; flex-direction:column; gap:7px; }
+          .e-fstack > span { color:#aab3b8; font-size:12px; }
+          .e-fstack .inp { width:100%; height:42px; padding:0 11px; display:flex; align-items:center; background:#121517; color:#F0F3F4; border:1px solid rgba(255,255,255,.17); border-radius:3px; font-family: ui-monospace, Menlo, monospace; font-size:13px; }
+          .e-pcmd { min-height:44px; padding:8px 12px; border-radius:2px; font-size:13px; display:flex; align-items:center; justify-content:center; background:#F0F3F4; border:1px solid #F0F3F4; color:#080a0b; font-weight:600; }
+          .e-psec { min-height:44px; padding:8px 12px; border-radius:2px; font-size:13px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid rgba(255,255,255,.17); color:#F0F3F4; }
+          .e-pdanger { min-height:44px; padding:8px 12px; border-radius:2px; font-size:13px; display:flex; align-items:center; justify-content:center; background:transparent; border:1px solid #ff3b2d; color:#ff3b2d; }
+          .e-netactions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 14px 14px; }
+          .e-netprog { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; margin:0 14px 14px; padding:11px 12px; border-left:3px solid #e0a020; background:#121517; color:#aab3b8; font-size:12px; }
+          .e-netprog .bar { grid-column:1/-1; height:5px; border-radius:3px; background:rgba(255,255,255,.10); overflow:hidden; }
+          .e-netprog .bar i { display:block; height:100%; width:78%; background:#aab3b8; }
+          .e-netprog strong { color:#F0F3F4; font-size:13px; font-weight:600; }
+          .e-netdet { border-top:1px solid rgba(255,255,255,.10); }
+          .e-netdet .sm { padding:12px 14px; color:#aab3b8; font-size:12px; }
+          .e-netdet dl { display:flex; flex-direction:column; gap:8px; padding:0 14px 14px; margin:0; }
+          .e-netdet dl > div { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+          .e-netdet dt { flex:none; color:#838d92; font-size:12px; }
+          .e-netdet dd { margin:0; min-width:0; color:#aab3b8; font-family: ui-monospace, Menlo, monospace; font-size:11px; overflow-wrap:anywhere; text-align:right; }
+
+          /* ---- credential ---- */
+          .e-cred { position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.82); }
+          .e-cred form { display:flex; flex-direction:column; gap:12px; width:420px; padding:20px; background:rgba(9,11,12,.94); border:1px solid rgba(255,255,255,.17); border-radius:4px; }
+          .e-cred p { margin:0; color:#aab3b8; text-wrap:pretty; }
+          .e-cred .inp { height:44px; padding:0 12px; display:flex; align-items:center; background:rgba(255,255,255,.055); color:#F0F3F4; border:1px solid rgba(255,255,255,.17); border-radius:3px; font-family: ui-monospace, Menlo, monospace; font-size:14px; letter-spacing:.18em; }
+          .e-cred .go { min-height:48px; display:flex; align-items:center; justify-content:center; padding:0 20px; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.17); border-radius:3px; color:#F0F3F4; font-size:15px; }
+
+          .e-dim { opacity:.42; }
+
+          /* ---- notes / tokens board ---- */
+          .note { width:2040px; color:#c8c5bf; font-size:13px; line-height:21px; }
+          .note h1 { font-size:22px; color:#EDEAE4; margin:0 0 10px; }
+          .note h2 { font-size:14px; color:#EDEAE4; margin:16px 0 6px; }
+          .note code { font-family: ui-monospace, Menlo, monospace; font-size:12px; color:#8EC5FF; }
+          .note ul { margin:0; padding-left:18px; }
+          .cols { display:flex; gap:44px; }
+          .cols > div { flex:1; }
+
+          .tkboard { width:520px; display:flex; flex-direction:column; gap:16px; background:rgba(8,10,11,.80); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:18px; box-sizing:border-box; }
+          .tkrow { display:flex; flex-direction:column; gap:8px; }
+          .tkrow .sl { font-family: ui-monospace, Menlo, monospace; font-size:10px; color:#838d92; text-transform:uppercase; letter-spacing:.08em; }
+          .swatch { display:flex; gap:8px; flex-wrap:wrap; }
+          .sq { width:60px; display:flex; flex-direction:column; gap:4px; font-family: ui-monospace, Menlo, monospace; font-size:9px; color:#838d92; }
+          .sq b { display:block; height:34px; border-radius:4px; border:1px solid rgba(255,255,255,.14); }
+        </style>
+      </helmet>
+
+      <!-- ================= NOTE ================= -->
+      <div class="frame note" style="left:40px; top:40px;" data-drags-parent="1">
+        <h1>Open Aria Echo · 浏览器端（Web）界面还原稿</h1>
+        <p>反向整理自 <code>openaria-echo-web</code> 的 Preact 实现（<code>src/ui/*</code> + <code>src/styles/app.css</code>，HEAD <code>d3e7b74</code>）。这是 Conductor 打包并在设备本地托管的<b>浏览器客户端</b>，与 v1/v2/v3 里的安卓 App 是两个不同的前端，因此单开一页、不与移动端混排。所有尺寸、颜色、字号、状态文案均取自代码，不是重新提案。</p>
+        <div class="cols">
+          <div>
+            <h2>取景器优先的三层外壳</h2>
+            <ul>
+              <li><b>画面铺满整个视口</b>（<code>.frame position:absolute; inset:0</code>），顶栏、底栏、面板都是<b>浮层</b>压在画面之上。</li>
+              <li><b>顶栏 60</b> 玻璃条：品牌方块 + 机身名，状态片，右侧等宽事实（余量/可写、温度、连接方式按钮、链路点），再两个 44 图标键（会话台账、设备与链路）。网络面板由「连接方式」按钮打开。</li>
+              <li><b>底栏 min 120</b> 玻璃条：76 圆形快门 + 命令区（录制名称输入 / 当前会话名+UUID）+ 4 格读数（时长/帧数/写入/校验）+ 标定录制按钮。</li>
+              <li><b>左上浮层</b> <code>.stage-left</code>：取景切换（双目/左眼/右眼）竖排、峰值对焦（PEAK + 阈值滑杆）、RAW IMU 卡、单眼时的「已裁切取景 · 看全画幅」。</li>
+              <li><b>右侧面板</b> <code>min(420px, 92vw)</code> 从右缘拉出：会话台账 / 会话详情 / 设备与链路 / 网络设置；窄屏（&lt;860）改为底部抽屉、默认单眼取景。</li>
+            </ul>
+          </div>
+          <div>
+            <h2>信号色配额（越界即错）</h2>
+            <ul>
+              <li><code>#ff3b2d</code> record — 仅 <code>device_state=recording</code>，实心红。</li>
+              <li><code>#ff3b2d</code> + 斜纹 fault — blocked / failed / unusable。</li>
+              <li><code>#e0a020</code> caution — 收尾 / 校验 / 降级 / 尚未校验 / 断线。</li>
+              <li><code>#46c98a</code> positive — 已连接、消费方判定可用。</li>
+              <li><code>#7fe3f5</code> live — 仅实时数值前景，绝不作背景。</li>
+              <li><code>#e858ff</code> peak — 仅峰值对焦辅助，不参与状态语义。</li>
+              <li>全站无循环动画：录制指示常亮。</li>
+            </ul>
+            <h2>不能动的语义（README）</h2>
+            <ul>
+              <li>设备状态与会话生命周期的唯一权威是 Conductor 的 capture daemon；页面只投影权威快照，不产生本地乐观状态。</li>
+              <li>能力未声明就不画控件（对焦、标定、网络切换均按设备声明门禁），不给一个按下去无效的键。</li>
+              <li>生产方声明（<code>sealed</code>）与消费方判断（gateway verdict）分开显示；只有判为 usable 的不可变快照才出现下载入口。</li>
+              <li>危险带只投影权威快照里的持久失败，刷新页面不会把旧终态重放成新告警。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 1. 取景器 · 待机 ================= -->
+      <div class="frame" style="left:40px; top:600px;" data-screen-label="Web 取景待机">
+        <div class="flabel" data-drags-parent="1">取景器 · 待机 <span>双目并置 · 宽屏</span></div>
+        <div class="win">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip">待机</strong>
+            <div class="e-facts">
+              <span>412.6 GiB 可写</span>
+              <span>48.2 °C</span>
+              <button class="e-cm">Wi-Fi</button>
+              <output class="e-link">已连接</output>
+            </div>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="e-sbs">
+              <div><div class="vfimg"></div><span class="eye">L</span></div>
+              <div><div class="vfimg"></div><span class="eye">R</span></div>
+            </div>
+            <div class="e-vftag">设备实时预览 · 双目并置 32:9 · contain</div>
+            <div class="e-stage-left">
+              <div class="e-inspect">
+                <button class="on">双目</button>
+                <button>左眼</button>
+                <button>右眼</button>
+              </div>
+              <div class="e-peak">
+                <button class="off">PEAK</button>
+                <span class="e-range dim"><i style="width:50%"></i></span>
+                <output>128</output>
+              </div>
+              <div class="e-ocard">
+                <span class="eyebrow">RAW IMU</span>
+                <dl class="e-imu">
+                  <div><dt>a</dt><dd>x 12.000  y -3.000  z 981.000 raw</dd></div>
+                  <div><dt>ω</dt><dd>x 0.000  y 1.000  z -2.000 raw</dd></div>
+                  <div><dt>≈</dt><dd>good</dd></div>
+                </dl>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar">
+            <span class="e-shutter"><b></b></span>
+            <div class="e-cbody">
+              <span class="eyebrow">录制名称（可选）</span>
+              <div class="e-nameinput">例如：走廊采集 01</div>
+            </div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">0.0 秒</dd></div>
+              <div><dt>帧数</dt><dd class="idle">0</dd></div>
+              <div><dt>写入</dt><dd class="idle">0.0 MiB</dd></div>
+              <div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+            <div class="e-cactions">
+              <div class="e-cbtn"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11"/><path d="M3.5 10h17M3.5 14h17M9 6.5v11M15 6.5v11"/></svg>标定录制</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 2. 取景器 · 录制中 ================= -->
+      <div class="frame" style="left:1400px; top:600px;" data-screen-label="Web 录制中">
+        <div class="flabel" data-drags-parent="1">取景器 · 录制中 <span>快门变方 · 读数走 live 色</span></div>
+        <div class="win">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark" style="border-color:#ff3b2d"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip rec">录制中</strong>
+            <div class="e-facts">
+              <span>409.1 GiB 可写</span>
+              <span style="color:#e0a020">61.7 °C</span>
+              <button class="e-cm">Wi-Fi</button>
+              <output class="e-link">已连接</output>
+            </div>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="e-sbs">
+              <div><div class="vfimg"></div><span class="eye">L</span></div>
+              <div><div class="vfimg"></div><span class="eye">R</span></div>
+            </div>
+            <div class="e-vftag">设备实时预览 · 双目并置 32:9 · contain</div>
+            <div class="e-stage-mid">
+              <div class="e-alert">
+                <code>imu_gap_detected</code>
+                <span>IMU 采样间隔 214 ms 超出预算</span>
+                <time>2026-09-04T10:22:41Z</time>
+              </div>
+            </div>
+            <div class="e-stage-left" style="top:76px;">
+              <div class="e-inspect">
+                <button class="on">双目</button>
+                <button>左眼</button>
+                <button>右眼</button>
+              </div>
+              <div class="e-peak">
+                <button class="on">PEAK</button>
+                <span class="e-range"><i style="width:62%"></i></span>
+                <output>158</output>
+              </div>
+              <div class="e-ocard">
+                <span class="eyebrow">RAW IMU</span>
+                <dl class="e-imu">
+                  <div><dt>a</dt><dd>x 14.000  y -1.000  z 979.000 raw</dd></div>
+                  <div><dt>ω</dt><dd>x 0.000  y 2.000  z -1.000 raw</dd></div>
+                  <div><dt>≈</dt><dd class="na">degraded</dd></div>
+                </dl>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar">
+            <span class="e-shutter rec"><b></b></span>
+            <div class="e-cbody">
+              <span class="eyebrow">当前会话</span>
+              <span class="e-stitle">走廊采集 03</span>
+              <code class="e-suuid">01J9F3K7QX8N2M4B6C0D5E7A</code>
+            </div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd>252.4 秒</dd></div>
+              <div><dt>帧数</dt><dd>7524</dd></div>
+              <div><dt>写入</dt><dd>3162.5 MiB</dd></div>
+              <div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+            <div class="e-cactions">
+              <div class="e-cbtn off"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11"/><path d="M3.5 10h17M3.5 14h17M9 6.5v11M15 6.5v11"/></svg>标定录制</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 3. 降级与危险 ================= -->
+      <div class="frame" style="left:2760px; top:600px;" data-screen-label="Web 降级与危险">
+        <div class="flabel" data-drags-parent="1">相机未接入 · 命令锁定 <span>危险带 + 诊断</span></div>
+        <div class="win">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip">待机</strong>
+            <div class="e-facts">
+              <span>412.6 GiB 可写</span>
+              <span>47.9 °C</span>
+              <button class="e-cm">Wi-Fi</button>
+              <output class="e-link warn">正在连接</output>
+            </div>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="e-stage-mid">
+              <div class="e-hazard">
+                <span class="mark"></span>
+                <p>上一次录制没有成功封存</p>
+                <strong class="outcome">失败</strong>
+                <code class="sess">01J9EYB2M0PQ7R3S5T8V1W4X</code>
+                <span class="e-tag">走廊采集 07</span>
+              </div>
+              <div class="e-alert">
+                <code>preview_unavailable</code>
+                <span>机身报告相机未接入，旧画面已清除</span>
+                <time>2026-09-04T10:24:03Z</time>
+              </div>
+            </div>
+            <div class="e-empty">
+              <span class="eyebrow">PREVIEW</span>
+              <span class="et">相机未接入</span>
+            </div>
+            <div class="e-stage-left" style="top:118px;">
+              <div class="e-inspect">
+                <button class="on">双目</button>
+                <button>左眼</button>
+                <button>右眼</button>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar">
+            <span class="e-shutter off"><b></b></span>
+            <div class="e-cbody">
+              <span class="eyebrow">录制名称（可选）</span>
+              <div class="e-nameinput" style="opacity:.5">例如：走廊采集 01</div>
+              <p class="e-lock">相机未接入，录制已锁定</p>
+            </div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">0.0 秒</dd></div>
+              <div><dt>帧数</dt><dd class="idle">0</dd></div>
+              <div><dt>写入</dt><dd class="idle">0.0 MiB</dd></div>
+              <div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+            <div class="e-cactions">
+              <div class="e-cbtn off"><svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="17" height="11"/><path d="M3.5 10h17M3.5 14h17M9 6.5v11M15 6.5v11"/></svg>标定录制</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 4. 会话台账 ================= -->
+      <div class="frame" style="left:4120px; top:600px;" data-screen-label="Web 会话台账">
+        <div class="flabel" data-drags-parent="1">会话台账 <span>右侧面板 · 搜索 + 筛选</span></div>
+        <div class="win">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip">待机</strong>
+            <div class="e-facts">
+              <span>412.6 GiB 可写</span>
+              <span>48.2 °C</span>
+              <button class="e-cm">Wi-Fi</button>
+              <output class="e-link">已连接</output>
+            </div>
+            <span class="e-ib on"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="vfimg e-dim"></div>
+            <div class="e-sbs e-dim"><div><span class="eye">L</span></div><div><span class="eye">R</span></div></div>
+            <div class="e-panel">
+              <div class="e-phead">
+                <span class="eyebrow">SESSIONS</span>
+                <span class="e-ptitle">会话台账</span>
+                <span style="flex-grow:1"></span>
+                <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M19 8a7.5 7.5 0 1 0 .5 7"/><path d="M19 3v5h-5"/></svg></span>
+                <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+              </div>
+              <div class="e-ptools">
+                <div class="e-search">
+                  <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg>
+                  搜索会话名或 ID
+                </div>
+                <div class="e-chips">
+                  <span class="e-fchip on">全部</span>
+                  <span class="e-fchip">已验证可用</span>
+                  <span class="e-fchip caution">未成功</span>
+                  <span class="e-fchip ghost">已载入 24</span>
+                </div>
+              </div>
+              <div class="e-pbody">
+                <div class="e-srow">
+                  <div class="e-shead"><span class="e-sname">走廊采集 02</span><span class="e-verdict usable">可用</span></div>
+                  <div class="e-smeta"><span>182.4 秒</span><span>4.5 GiB</span><span class="producer">已封存</span><code class="uuid">01J9F3K7QX8N…5E7A</code></div>
+                </div>
+                <div class="e-srow">
+                  <div class="e-shead"><span class="e-sname">走廊采集 01</span><span class="e-verdict usable">可用</span></div>
+                  <div class="e-smeta"><span>301.7 秒</span><span>7.2 GiB</span><span class="producer">已封存</span><code class="uuid">01J9F2R4A0…9C1B</code></div>
+                </div>
+                <div class="e-srow bad">
+                  <div class="e-shead"><span class="e-sname">标定 · take 4</span><span class="e-verdict unknown">尚未校验</span></div>
+                  <div class="e-smeta"><span>0.6 秒</span><span>0.2 GiB</span><span class="producer">abandoned</span><code class="uuid">01J9EYB2M0…1W4X</code></div>
+                </div>
+                <div class="e-srow">
+                  <div class="e-shead"><span class="e-sname">中庭全景 07</span><span class="e-verdict unusable">不可用</span></div>
+                  <div class="e-smeta"><span>44.2 秒</span><span>1.1 GiB</span><span class="producer">已封存</span><code class="uuid">01J9EQ8W7T…3H2D</code></div>
+                </div>
+                <div class="e-srow">
+                  <div class="e-shead"><span class="e-sname">走廊采集 · 复采</span><span class="e-verdict usable">可用</span></div>
+                  <div class="e-smeta"><span>128.9 秒</span><span>3.0 GiB</span><span class="producer">已封存</span><code class="uuid">01J9EM1K5P…8F0A</code></div>
+                </div>
+                <button class="e-pmore">加载更多</button>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar e-dim">
+            <span class="e-shutter"><b></b></span>
+            <div class="e-cbody"><span class="eyebrow">录制名称（可选）</span><div class="e-nameinput">例如：走廊采集 01</div></div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">0.0 秒</dd></div>
+              <div><dt>帧数</dt><dd class="idle">0</dd></div>
+              <div><dt>写入</dt><dd class="idle">0.0 MiB</dd></div>
+              <div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 5. 会话详情 ================= -->
+      <div class="frame" style="left:5480px; top:600px;" data-screen-label="Web 会话详情">
+        <div class="flabel" data-drags-parent="1">会话详情 <span>生产方声明 / 消费方判断 / 制品</span></div>
+        <div class="win tall">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip">待机</strong>
+            <div class="e-facts">
+              <span>412.6 GiB 可写</span><span>48.2 °C</span>
+              <button class="e-cm">Wi-Fi</button><output class="e-link">已连接</output>
+            </div>
+            <span class="e-ib on"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="vfimg e-dim"></div>
+            <div class="e-panel">
+              <div class="e-phead">
+                <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M14 5l-7 7 7 7"/></svg></span>
+                <span class="e-ptitle" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">走廊采集 02</span>
+                <span style="flex-grow:1"></span>
+                <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+              </div>
+              <div class="e-pbody">
+                <div class="e-sec">
+                  <span class="eyebrow">OUTCOME</span>
+                  <dl class="e-facts2">
+                    <div><dt>生产方声明</dt><dd class="permit">sealed</dd></div>
+                    <div><dt>消费方判断</dt><dd class="permit">usable</dd></div>
+                    <div><dt>封存于</dt><dd>2026/09/04 09:58:03</dd></div>
+                    <div><dt>校验于</dt><dd class="muted">2026/09/04 09:58:40</dd></div>
+                    <div><dt>manifest sha256</dt><dd class="e-hash">9f2c4b0a71d3e8c6…a7d1</dd></div>
+                  </dl>
+                  <p class="e-note2">sealed 只证明生产方给出自洽声明；能否消费由 gateway 对当前字节独立判定，两者分开显示。</p>
+                </div>
+                <div class="e-sec">
+                  <span class="eyebrow">IDENTITY</span>
+                  <dl class="e-facts2">
+                    <div><dt>session</dt><dd>01J9F3K7QX8N2M4B6C0D5E7A</dd></div>
+                    <div><dt>take</dt><dd>tk_7c1e · #2</dd></div>
+                    <div><dt>continuation_of</dt><dd class="muted">无</dd></div>
+                    <div><dt>manifest</dt><dd>mf_7c1e9a04</dd></div>
+                    <div><dt>volume</dt><dd>vol_nvme0n1p2</dd></div>
+                    <div><dt>capture_mode</dt><dd>standard</dd></div>
+                  </dl>
+                </div>
+                <div class="e-sec">
+                  <span class="eyebrow">CAPTURE</span>
+                  <dl class="e-facts2">
+                    <div><dt>时长</dt><dd>182.4 秒</dd></div>
+                    <div><dt>起止</dt><dd>09:55:01 → 09:58:03</dd></div>
+                    <div><dt>画面</dt><dd>3840×1080 · 30 fps</dd></div>
+                    <div><dt>帧数</dt><dd>5472</dd></div>
+                    <div><dt>丢帧</dt><dd class="permit">0</dd></div>
+                    <div><dt>视频</dt><dd>h264/mp4 · stereo_sbs</dd></div>
+                  </dl>
+                </div>
+                <div class="e-sec">
+                  <span class="eyebrow">ARTIFACTS · 4</span>
+                  <div class="e-artifact">
+                    <div class="ab"><span class="e-arole">primary_video_left</span><span class="e-apath">video/left.mp4</span><span class="e-hash">sha256:2f9c…b71a</span></div>
+                    <span class="e-asize">2.2 GiB</span>
+                    <span class="e-dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                  </div>
+                  <div class="e-artifact">
+                    <div class="ab"><span class="e-arole">primary_video_right</span><span class="e-apath">video/right.mp4</span><span class="e-hash">sha256:8d1e…4c02</span></div>
+                    <span class="e-asize">2.2 GiB</span>
+                    <span class="e-dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                  </div>
+                  <div class="e-artifact">
+                    <div class="ab"><span class="e-arole">telemetry_imu</span><span class="e-apath">imu/imu.jsonl</span><span class="e-hash">sha256:1a77…9e5d</span></div>
+                    <span class="e-asize">18.4 MiB</span>
+                    <span class="e-dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                  </div>
+                  <div class="e-artifact">
+                    <div class="ab"><span class="e-arole">log</span><span class="e-apath">logs/capture.log</span><span class="e-hash">sha256:c40b…12f8</span></div>
+                    <span class="e-asize">96.2 KiB</span>
+                    <span class="e-dl"><svg viewBox="0 0 24 24"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 16v3.5h15V16"/></svg>下载</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar e-dim">
+            <span class="e-shutter"><b></b></span>
+            <div class="e-cbody"><span class="eyebrow">录制名称（可选）</span><div class="e-nameinput">例如：走廊采集 01</div></div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">0.0 秒</dd></div><div><dt>帧数</dt><dd class="idle">0</dd></div>
+              <div><dt>写入</dt><dd class="idle">0.0 MiB</dd></div><div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 6. 设备与链路 ================= -->
+      <div class="frame" style="left:6840px; top:600px;" data-screen-label="Web 设备与链路">
+        <div class="flabel" data-drags-parent="1">设备与链路 <span>运行时 / 光学 / 存储 / 构建与权威</span></div>
+        <div class="win med">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip">待机</strong>
+            <div class="e-facts">
+              <span>412.6 GiB 可写</span><span>48.2 °C</span>
+              <button class="e-cm">Wi-Fi</button><output class="e-link">已连接</output>
+            </div>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib on"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="vfimg e-dim"></div>
+            <div class="e-panel">
+              <div class="e-phead">
+                <span class="eyebrow">DEVICE</span>
+                <span class="e-ptitle">设备与链路</span>
+                <span style="flex-grow:1"></span>
+                <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+              </div>
+              <div class="e-pbody">
+                <div class="e-sec">
+                  <span class="eyebrow">RUNTIME</span>
+                  <dl class="e-facts2">
+                    <div><dt>温度</dt><dd>48.2 °C</dd></div>
+                    <div><dt>连接方式</dt><dd>Wi-Fi</dd></div>
+                    <div><dt>相机</dt><dd class="permit">已连接</dd></div>
+                    <div><dt>观测于</dt><dd class="muted">2026/09/04 10:22:41</dd></div>
+                  </dl>
+                </div>
+                <div class="e-sec">
+                  <span class="eyebrow">OPTICS</span>
+                  <dl class="e-facts2"><div><dt>手动焦距</dt><dd>512</dd></div></dl>
+                  <span class="e-rangewide"><i style="width:50%"></i></span>
+                  <p class="e-note2">手动焦距 512（0–1023，步进 1）</p>
+                  <div class="e-chips">
+                    <span class="e-pchip">应用焦距</span>
+                    <span class="e-pchip">自动对焦</span>
+                  </div>
+                </div>
+                <div class="e-sec">
+                  <span class="eyebrow">STORAGE</span>
+                  <dl class="e-facts2">
+                    <div><dt>剩余</dt><dd>412.6 GiB</dd></div>
+                    <div><dt>总量</dt><dd class="muted">477.0 GiB</dd></div>
+                    <div><dt>可写</dt><dd>是</dd></div>
+                    <div><dt>volume</dt><dd>vol_nvme0n1p2</dd></div>
+                  </dl>
+                </div>
+                <div class="e-sec">
+                  <span class="eyebrow">BUILD &amp; AUTHORITY</span>
+                  <dl class="e-facts2">
+                    <div><dt>软件包</dt><dd>0.5.3</dd></div>
+                    <div><dt>Device API</dt><dd>v4</dd></div>
+                    <div><dt>安全 profile</dt><dd>lan-token</dd></div>
+                    <div><dt>build id</dt><dd>2026-09-02T18:11Z</dd></div>
+                    <div><dt>commit</dt><dd class="e-hash">a1f77c9</dd></div>
+                    <div><dt>硬件指纹</dt><dd class="e-hash">8c41d0b9f3a2…f92b</dd></div>
+                    <div><dt>authority epoch</dt><dd class="e-hash">ae_01J9E8ZC4T</dd></div>
+                    <div><dt>source revision</dt><dd>42</dd></div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar e-dim">
+            <span class="e-shutter"><b></b></span>
+            <div class="e-cbody"><span class="eyebrow">录制名称（可选）</span><div class="e-nameinput">例如：走廊采集 01</div></div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">0.0 秒</dd></div><div><dt>帧数</dt><dd class="idle">0</dd></div>
+              <div><dt>写入</dt><dd class="idle">0.0 MiB</dd></div><div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 7. 网络设置 ================= -->
+      <div class="frame" style="left:8200px; top:600px;" data-screen-label="Web 网络设置">
+        <div class="flabel" data-drags-parent="1">网络设置 <span>当前连接 + 可用网络 + 切换事务</span></div>
+        <div class="win tall">
+          <div class="e-topbar">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">rp-ylx-0713</span></div>
+            <strong class="e-chip">待机</strong>
+            <div class="e-facts">
+              <span>412.6 GiB 可写</span><span>48.2 °C</span>
+              <button class="e-cm on">Wi-Fi</button><output class="e-link">已连接</output>
+            </div>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="vfimg e-dim"></div>
+            <div class="e-panel">
+              <div class="e-phead">
+                <span class="eyebrow">NETWORK</span>
+                <span class="e-ptitle">网络设置</span>
+                <span style="flex-grow:1"></span>
+                <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span>
+              </div>
+              <div class="e-pbody">
+                <div class="e-netcur">
+                  <div class="top"><span>当前连接</span><span>已连接</span></div>
+                  <strong>lab-5g</strong>
+                  <div class="meta">Wi-Fi · 10.42.0.14</div>
+                  <p class="e-netstatus">配置已保存并验证</p>
+                </div>
+                <div class="e-nethead">
+                  <div><h3>可用网络<span class="c">6 个</span></h3></div>
+                  <span class="e-ib sm"><svg viewBox="0 0 24 24"><path d="M19 8a7.5 7.5 0 1 0 .5 7"/><path d="M19 3v5h-5"/></svg></span>
+                </div>
+                <div class="e-wlist">
+                  <button class="e-wopt on">
+                    <span class="e-wid"><strong>lab-5g</strong><span>WPA2</span></span>
+                    <span class="e-wmeta"><span class="e-wcur">当前</span><span class="e-sig"><span class="bars"><i class="a"></i><i class="a"></i><i class="a"></i><i class="a"></i></span>强</span></span>
+                  </button>
+                  <button class="e-wopt">
+                    <span class="e-wid"><strong>site-mesh</strong><span>WPA2 / WPA3</span></span>
+                    <span class="e-wmeta"><span class="e-sig"><span class="bars"><i class="a"></i><i class="a"></i><i class="a"></i><i></i></span>良好</span></span>
+                  </button>
+                  <button class="e-wopt">
+                    <span class="e-wid"><strong>office-guest</strong><span>开放</span></span>
+                    <span class="e-wmeta"><span class="e-sig"><span class="bars"><i class="a"></i><i class="a"></i><i></i><i></i></span>一般</span></span>
+                  </button>
+                  <button class="e-wopt">
+                    <span class="e-wid"><strong>lab-2g</strong><span>WPA2</span></span>
+                    <span class="e-wmeta"><span class="e-sig"><span class="bars"><i class="a"></i><i></i><i></i><i></i></span>弱</span></span>
+                  </button>
+                  <button class="e-wopt e-wmanual"><span>+</span><span>手动添加网络</span></button>
+                </div>
+                <div class="e-netfields">
+                  <label class="e-fstack"><span>Wi-Fi 密码</span><span class="inp">••••••••••••</span></label>
+                  <div class="e-pcmd">连接</div>
+                </div>
+                <div class="e-netactions">
+                  <div class="e-psec">启用设备热点</div>
+                  <div class="e-pdanger">忘记 Wi-Fi</div>
+                </div>
+                <div class="e-netprog">
+                  <span class="bar"><i></i></span>
+                  <div style="display:flex;flex-direction:column;min-width:0"><strong>正在验证连接</strong><span>切换网络</span></div>
+                  <span>8.0 秒</span>
+                </div>
+                <div class="e-netdet">
+                  <div class="sm">▾ 网络详情</div>
+                  <dl>
+                    <div><dt>默认连接</dt><dd>Wi-Fi</dd></div>
+                    <div><dt>Wi-Fi</dt><dd>已连接 / lab-5g / 10.42.0.14</dd></div>
+                    <div><dt>设备热点</dt><dd>未启用</dd></div>
+                    <div><dt>有线</dt><dd>未连接</dd></div>
+                    <div><dt>本机地址</dt><dd>rp-ylx.local:8080</dd></div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="e-bottombar e-dim">
+            <span class="e-shutter"><b></b></span>
+            <div class="e-cbody"><span class="eyebrow">录制名称（可选）</span><div class="e-nameinput">例如：走廊采集 01</div></div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">0.0 秒</dd></div><div><dt>帧数</dt><dd class="idle">0</dd></div>
+              <div><dt>写入</dt><dd class="idle">0.0 MiB</dd></div><div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 8. 设备访问令牌 ================= -->
+      <div class="frame" style="left:9560px; top:600px;" data-screen-label="Web 访问令牌">
+        <div class="flabel" data-drags-parent="1">设备访问令牌 <span>认证 profile · 模态遮罩</span></div>
+        <div class="win">
+          <div class="e-topbar e-dim">
+            <div class="e-brand"><span class="e-brand-mark"></span><span class="e-brand-label">Open Aria Echo</span></div>
+            <strong class="e-chip">未连接</strong>
+            <div class="e-facts"><span>--</span><span>--</span><button class="e-cm">--</button><output class="e-link warn">正在连接</output></div>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+            <span class="e-ib"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15"/><path d="M7.5 9h9M7.5 12.5h5"/></svg></span>
+          </div>
+          <div class="e-stage">
+            <div class="e-empty e-dim"><span class="eyebrow">PREVIEW</span><span class="et">等待设备画面</span></div>
+          </div>
+          <div class="e-bottombar e-dim">
+            <span class="e-shutter off"><b></b></span>
+            <div class="e-cbody"><span class="eyebrow">录制名称（可选）</span><div class="e-nameinput">例如：走廊采集 01</div></div>
+            <dl class="e-readout">
+              <div><dt>时长</dt><dd class="idle">--</dd></div><div><dt>帧数</dt><dd class="idle">--</dd></div>
+              <div><dt>写入</dt><dd class="idle">--</dd></div><div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+          </div>
+          <div class="e-cred">
+            <form>
+              <span class="eyebrow">设备访问令牌</span>
+              <p>这台设备运行在需要认证的 profile 下，使用产品能力前必须提供访问令牌。</p>
+              <span class="inp">••••••••••••••••••••</span>
+              <span class="go">连接设备</span>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 9. 令牌与控件 ================= -->
+      <div class="frame" style="left:10920px; top:600px;" data-screen-label="Web 令牌与控件">
+        <div class="flabel" data-drags-parent="1">令牌与控件 <span>app.css · design tokens</span></div>
+        <div class="tkboard">
+          <div class="tkrow">
+            <div class="sl">Signal colors · 越界即错</div>
+            <div class="swatch">
+              <div class="sq"><b style="background:#000"></b>void</div>
+              <div class="sq"><b style="background:#F0F3F4"></b>ink</div>
+              <div class="sq"><b style="background:#AAB3B8"></b>ink-2</div>
+              <div class="sq"><b style="background:#838D92"></b>ink-3</div>
+              <div class="sq"><b style="background:#FF3B2D"></b>record</div>
+              <div class="sq"><b style="background:#E0A020"></b>caution</div>
+              <div class="sq"><b style="background:#46C98A"></b>positive</div>
+              <div class="sq"><b style="background:#7FE3F5"></b>live</div>
+              <div class="sq"><b style="background:#8EC5FF"></b>link</div>
+              <div class="sq"><b style="background:#E858FF"></b>peak</div>
+            </div>
+          </div>
+          <div class="tkrow">
+            <div class="sl">state-chip · padding 3/11 · border-radius 2</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <strong class="e-chip">待机</strong>
+              <strong class="e-chip rec">录制中</strong>
+              <strong class="e-chip warn">校验中</strong>
+              <strong class="e-chip blocked">受阻</strong>
+            </div>
+          </div>
+          <div class="tkrow">
+            <div class="sl">shutter · 76 圆 · 空闲红圆 / 录制红方 / 锁定变暗</div>
+            <div style="display:flex;gap:14px;align-items:center">
+              <span class="e-shutter"><b></b></span>
+              <span class="e-shutter rec"><b></b></span>
+              <span class="e-shutter off"><b></b></span>
+            </div>
+          </div>
+          <div class="tkrow">
+            <div class="sl">inspect 竖排 · 60×44 · aria-pressed 反白</div>
+            <div class="e-inspect" style="flex-direction:row"><button class="on">双目</button><button>左眼</button><button>右眼</button></div>
+          </div>
+          <div class="tkrow">
+            <div class="sl">readout · 4 格 · dd mono 17 live / idle 转 ink-3</div>
+            <dl class="e-readout" style="align-self:flex-start">
+              <div><dt>时长</dt><dd>252.4 秒</dd></div>
+              <div><dt>帧数</dt><dd>7524</dd></div>
+              <div><dt>写入</dt><dd>3162.5 MiB</dd></div>
+              <div><dt>校验</dt><dd class="idle">--</dd></div>
+            </dl>
+          </div>
+          <div class="tkrow">
+            <div class="sl">verdict · 生产方声明与消费方判断分开</div>
+            <div style="display:flex;gap:12px">
+              <span class="e-verdict usable">可用</span>
+              <span class="e-verdict unusable">不可用</span>
+              <span class="e-verdict unknown">尚未校验</span>
+            </div>
+          </div>
+          <div class="tkrow">
+            <div class="sl">panel button · command / secondary / danger</div>
+            <div style="display:flex;gap:8px"><span class="e-pcmd">连接</span><span class="e-psec">启用设备热点</span><span class="e-pdanger">忘记 Wi-Fi</span></div>
+          </div>
+        </div>
+      </div>
+    </x-dc>
+    <script type="text/x-dc" data-dc-script data-props='{}'>
+      class Component extends DCLogic {
+        renderVals() { return {}; }
+      }
+    </script>
+  </body>
+</html>

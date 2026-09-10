@@ -99,6 +99,41 @@ function FocusControl({ state }: { state: AppState }) {
   );
 }
 
+/** 存储改用容量条：设备卷是 GiB 量级，一条比两行数字更快读出还能拍多久。 */
+function StorageCapacity({ state }: { state: AppState }) {
+  const storage = state.device?.storage;
+  const total = storage?.total_bytes;
+  const available = storage?.available_bytes;
+  const known =
+    typeof total === "number" &&
+    Number.isFinite(total) &&
+    total > 0 &&
+    typeof available === "number" &&
+    Number.isFinite(available);
+  if (!known) {
+    return (
+      <p class="panel-note" data-testid="storage-capacity">
+        容量不可用
+      </p>
+    );
+  }
+  const used = Math.max(0, total - available);
+  const usedPct = Math.min(100, Math.max(0, (used / total) * 100));
+  return (
+    <div data-testid="storage-capacity">
+      <div class="capacity-bar" role="img" aria-label={`已用 ${formatBytes(used)} / 共 ${formatBytes(total)}`}>
+        <i style={`width:${usedPct.toFixed(1)}%`} />
+      </div>
+      <div class="capacity-caption">
+        <span>已用 {formatBytes(used)}</span>
+        <span>
+          可用 {formatBytes(available)} / {formatBytes(total)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function DevicePanel({ state }: { state: AppState }) {
   const device = state.device;
   const runtime = state.capture?.snapshot.runtime ?? device?.runtime ?? null;
@@ -160,15 +195,8 @@ export function DevicePanel({ state }: { state: AppState }) {
 
         <section class="detail-section">
           <span class="eyebrow">STORAGE</span>
+          <StorageCapacity state={state} />
           <dl class="facts">
-            <div>
-              <dt>剩余</dt>
-              <dd>{formatBytes(device?.storage.available_bytes)}</dd>
-            </div>
-            <div>
-              <dt>总量</dt>
-              <dd data-tone="muted">{formatBytes(device?.storage.total_bytes)}</dd>
-            </div>
             <div>
               <dt>可写</dt>
               <dd data-tone={device?.storage.writable ? undefined : "caution"}>

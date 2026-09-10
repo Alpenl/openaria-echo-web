@@ -109,6 +109,7 @@ export function SessionsPanel({ state }: { state: AppState }) {
             class="session-row"
             data-testid="session-item"
             data-outcome={session.producer_outcome === "sealed" ? "sealed" : "unsuccessful"}
+            data-verdict={verdictOf(session)}
             onClick={() => void store.openSession(session.session_id, session.producer_outcome)}
           >
             <span class="session-head">
