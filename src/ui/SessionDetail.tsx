@@ -59,6 +59,125 @@ function Head({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
+function SessionReplay({
+  detail,
+  enabled,
+}: {
+  detail: SessionDetailManifest;
+  enabled: boolean;
+}) {
+  const segments = detail.video?.segments ?? [];
+  const playableSegments = segments.filter(
+    (segment) => segment.artifacts.left || segment.artifacts.right,
+  );
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const leftRef = useRef<HTMLVideoElement>(null);
+  const rightRef = useRef<HTMLVideoElement>(null);
+  const syncingRef = useRef(false);
+  const [playbackError, setPlaybackError] = useState(false);
+
+  if (!playableSegments.length) {
+    return null;
+  }
+
+  const segment = playableSegments[selectedIndex] ?? playableSegments[0];
+  if (!segment) {
+    return null;
+  }
+  const audio = detail.audio?.segments.find((entry) => entry.index === segment.index)?.artifact;
+  const artifactSource = (artifact: SessionArtifact | undefined) =>
+    artifact ? deviceApi.artifactUrl(detail.session_id, artifact.artifact_id) : undefined;
+  const sync = (source: HTMLVideoElement, action: (target: HTMLVideoElement) => void) => {
+    if (syncingRef.current) {
+      return;
+    }
+    const target = source === leftRef.current ? rightRef.current : leftRef.current;
+    if (!target) {
+      return;
+    }
+    syncingRef.current = true;
+    action(target);
+    globalThis.setTimeout(() => {
+      syncingRef.current = false;
+    }, 0);
+  };
+
+  return (
+    <section class="detail-section replay-section" data-testid="session-replay">
+      <span class="eyebrow">REPLAY</span>
+      <div class="replay-toolbar">
+        <label>
+          <span>视频分段</span>
+          <select
+            value={String(segment.index)}
+            onChange={(event) => {
+              const next = Number((event.currentTarget as HTMLSelectElement).value);
+              const position = playableSegments.findIndex((entry) => entry.index === next);
+              setPlaybackError(false);
+              setSelectedIndex(position >= 0 ? position : 0);
+            }}
+            data-testid="replay-segment"
+          >
+            {playableSegments.map((entry, position) => (
+              <option value={String(entry.index)} key={entry.index}>
+                #{entry.index + 1}
+                {entry.start_time_seconds !== undefined && entry.end_time_seconds !== undefined
+                  ? ` · ${formatSeconds(entry.end_time_seconds - entry.start_time_seconds)}`
+                  : ""}
+                {position === 0 ? "（首段）" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span class="replay-hint">
+          {enabled ? "播放时按当前会话做完整字节校验" : "设备未声明 Range 回放能力"}
+        </span>
+      </div>
+      <div class="replay-grid">
+        {(["left", "right"] as const).map((eye) => {
+          const artifact = segment.artifacts[eye];
+          return (
+            <div class="replay-player" key={eye}>
+              <span class="artifact-role">{eye === "left" ? "左目" : "右目"}</span>
+              {artifact && enabled ? (
+                <video
+                  ref={eye === "left" ? leftRef : rightRef}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  src={artifactSource(artifact)}
+                  data-testid={`replay-${eye}`}
+                  onError={() => setPlaybackError(true)}
+                  onPlay={(event) => sync(event.currentTarget, (target) => void target.play())}
+                  onPause={(event) => sync(event.currentTarget, (target) => target.pause())}
+                  onSeeked={(event) =>
+                    sync(event.currentTarget, (target) => {
+                      target.currentTime = event.currentTarget.currentTime;
+                    })
+                  }
+                />
+              ) : (
+                <div class="replay-unavailable">{artifact ? "设备不支持 Range 回放" : "此分段无制品"}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {audio && enabled ? (
+        <label class="replay-audio">
+          <span class="artifact-role">音频</span>
+          <audio controls preload="metadata" src={artifactSource(audio)} />
+        </label>
+      ) : null}
+      {playbackError ? (
+        <p class="panel-note" role="alert">
+          回放制品无法读取；设备会在首次播放时完成校验，请稍后重试或检查会话是否已被替换。
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function SessionDetail({ state }: { state: AppState }) {
   const selected = state.selected;
   if (!selected) {
@@ -343,6 +462,11 @@ export function SessionDetail({ state }: { state: AppState }) {
             </div>
           ))}
         </section>
+
+        <SessionReplay
+          detail={detail}
+          enabled={state.device?.capabilities.range_download === true}
+        />
 
         <section class="detail-section session-delete">
           <span class="eyebrow">DELETE</span>

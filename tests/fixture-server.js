@@ -399,6 +399,7 @@ function makeSessionDetail(summary) {
   });
   const left = artifact("left", "video.left", "video/left.mp4", "video/mp4", 1024);
   const right = artifact("right", "video.right", "video/right.mp4", "video/mp4", 1024);
+  const audio = artifact("audio", "audio.main", "audio/main.wav", "audio/wav", 512);
   const frames = artifact(
     "frames",
     "frames.index",
@@ -459,6 +460,13 @@ function makeSessionDetail(summary) {
           artifacts: { left, right },
         },
       ],
+    },
+    audio: {
+      codec: "pcm_s16le",
+      container: "wav",
+      sample_rate_hz: 48000,
+      channels: 2,
+      segments: [{ index: 0, artifact: audio }],
     },
     frames: { count: 7500, artifact: frames },
     imu: { artifact: imu, coordinate_frame: "device" },

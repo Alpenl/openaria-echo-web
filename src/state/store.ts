@@ -170,8 +170,8 @@ export class EchoStore {
       this.dispatch({ type: "error.cleared" });
       this.dispatch({ type: "credentials.cleared" });
 
-      // 会话清单在大卷上要做完整 manifest 校验；它和设备辅助资源都不能阻塞
-      // 权威状态、SSE 或预览，否则设备在线时界面仍会长时间显示未连接。
+      // 会话清单只读取轻量 manifest 元数据；制品完整校验延迟到回放/下载，
+      // 避免大卷历史内容阻塞权威状态、SSE 或预览。
       void deviceApi
         .getNetwork()
         .then((network) => this.dispatch({ type: "network.loaded", payload: network }))
