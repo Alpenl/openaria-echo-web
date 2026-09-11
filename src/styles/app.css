@@ -1345,6 +1345,93 @@ a:hover {
   pointer-events: none;
 }
 
+.replay-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+}
+
+.replay-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+}
+
+.replay-toolbar select {
+  min-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 5px 8px;
+  font: inherit;
+}
+
+.replay-hint {
+  color: var(--ink-3);
+  text-align: right;
+}
+
+.replay-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.replay-player {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.replay-player video {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  max-height: 320px;
+  border-radius: 6px;
+  background: #0c1114;
+}
+
+.replay-unavailable {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.replay-audio {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.replay-audio audio {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .replay-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .replay-hint {
+    text-align: left;
+  }
+
+  .replay-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* -------------------------------------------------- 判定印章 / 容量条 */
 
 /* 生产方声明 vs 消费方判断：并排两枚印章，这是产品核心语义，必须一眼看到。 */
