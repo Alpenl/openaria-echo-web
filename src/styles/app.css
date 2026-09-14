@@ -163,6 +163,7 @@ a:hover {
 .echo {
   position: relative;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
   background: var(--void);
   display: grid;
@@ -187,6 +188,15 @@ a:hover {
   z-index: 0;
   overflow: hidden;
   background: var(--void);
+}
+
+.preview-tools-toggle,
+.name-done {
+  display: none;
+}
+
+.preview-settings {
+  display: contents;
 }
 
 .frame img,
@@ -886,6 +896,43 @@ a:hover {
   font-size: 15px;
 }
 
+.name-field {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+}
+
+.name-field .name-input {
+  padding-right: 48px;
+}
+
+.clear-name {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.name-hint {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.capture-shortcut {
+  display: none;
+}
+
+.shutter-caption {
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
 .name-input::placeholder {
   color: var(--ink-3);
 }
@@ -1114,6 +1161,41 @@ a:hover {
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   text-align: left;
+}
+
+.session-entry {
+  display: flex;
+  min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.session-entry .session-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.session-quick-delete {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  align-self: center;
+  min-width: 52px;
+  min-height: 52px;
+  margin-right: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.session-quick-delete:hover {
+  background: var(--sunken);
+  color: var(--fault);
 }
 
 /* 每行左侧一根 3px 状态色条：绿=可用、琥珀=未成功/未校验、红=不可用。 */
@@ -1909,15 +1991,51 @@ a:hover {
 }
 
 .session-delete {
+  flex: none;
   gap: 10px;
+  max-height: 45%;
+  overflow-y: auto;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--hairline-2);
 }
 
 .session-delete > .panel-danger {
-  align-self: flex-start;
+  width: 100%;
 }
 
 .session-delete-confirm {
   margin: 0;
+  width: min(420px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 16px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.5);
+}
+
+.session-delete-confirm.network-confirm.danger {
+  background: var(--panel-bg);
+}
+
+.session-delete-confirm strong {
+  font-size: 18px;
+}
+
+.session-delete-confirm p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .network-progress {
@@ -2107,17 +2225,28 @@ a:hover {
 
 /* ------------------------------------------------------------ 窄屏与横屏 */
 
-@media (max-width: 859px) {
-  /* 窄屏顶栏两行：品牌与状态一行、事实一行，图标留在第一行右端。 */
+@media (max-width: 859px), (max-width: 1200px) and (max-height: 600px) and (pointer: coarse) {
+  /* 手机把取景器限制在真实可见区域，画面不再被上下操作栏遮住。 */
+  .frame {
+    position: relative;
+    grid-row: 2;
+    grid-column: 1;
+    min-height: 0;
+  }
+
+  .vf-tick[data-edge="top"] { top: 12px; }
+  .vf-tick[data-edge="bottom"] { bottom: 12px; }
+
   .topbar {
-    flex-wrap: wrap;
-    row-gap: 6px;
-    gap: 10px;
-    padding: 10px 12px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--void);
   }
 
   .topbar .brand {
     order: 1;
+    flex: 1;
   }
 
   .topbar .state-chip {
@@ -2131,7 +2260,11 @@ a:hover {
   }
 
   .topbar .brand + .state-chip {
-    margin-right: auto;
+    margin-right: 0;
+  }
+
+  .topbar > button[aria-label="会话台账"] {
+    display: none;
   }
 
   .focus-peaking-control {
@@ -2144,49 +2277,170 @@ a:hover {
   }
 
   .topbar-facts {
-    order: 4;
-    width: 100%;
-    margin-left: 0;
-    gap: 10px;
+    display: contents;
+  }
+
+  .topbar-facts > span,
+  .topbar-facts > output {
+    display: none;
+  }
+
+  .topbar-facts .connection-method-trigger {
+    order: 3;
+    flex: none;
+    min-height: 44px;
     font-size: 11px;
-    flex-wrap: wrap;
-    row-gap: 4px;
   }
 
   .bottombar {
     flex-wrap: wrap;
     gap: 10px;
     min-height: 0;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)) 12px;
   }
 
-  /* 窄屏两行：名称占满一行，快门与读数共享第二行，别让快门独占一整条。 */
+  /* 首屏只保留快门和快捷入口，命名按需展开。模式切换放在快门下方。 */
   .command-form {
     order: 1;
     flex: 1 1 100%;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     grid-template-areas:
-      "name name"
-      "shutter readout";
+      "library shutter naming"
+      "mode mode mode";
     align-items: center;
-    gap: 10px;
+    gap: 2px 10px;
   }
 
   .command-body {
     grid-area: name;
     min-width: 0;
+    display: none;
+  }
+
+  .bottombar[data-naming="true"] .command-form,
+  .bottombar[data-active="true"] .command-form {
+    grid-template-areas:
+      "name name name"
+      "readout readout readout"
+      "library shutter naming"
+      "mode mode mode";
+  }
+
+  .bottombar[data-naming="true"] .command-body {
+    position: relative;
+    display: flex;
+    padding-top: 14px;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .name-done {
+    position: absolute;
+    display: block;
+    right: 0;
+    top: 0;
+    height: 44px;
+    padding: 0 12px;
+    border: 0;
+    background: transparent;
+    color: var(--link);
+  }
+
+  .bottombar[data-active="true"] .command-body {
+    display: flex;
+  }
+
+  .bottombar[data-active="true"] .command-body .eyebrow,
+  .bottombar[data-active="true"] .session-uuid {
+    display: none;
+  }
+
+  .bottombar .session-title {
+    font-size: 13px;
+    text-align: center;
   }
 
   .name-input {
     max-width: none;
-    height: 42px;
+    height: 46px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+
+  .name-field {
+    max-width: none;
+  }
+
+  .capture-shortcut {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    justify-self: center;
+    min-width: 64px;
+    min-height: 64px;
+    margin-top: 0;
+    max-width: 88px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--sunken);
+    color: var(--ink-2);
+    font-size: 12px;
+  }
+
+  .capture-shortcut > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mode-seg {
+    grid-area: mode;
+    justify-self: center;
+    border: 0;
+  }
+
+  .mode-seg button {
+    border: 0;
+    border-radius: 8px;
+  }
+
+  .shutter-caption {
+    display: none;
+  }
+
+  .capture-shortcut:disabled {
+    color: var(--ink-4);
+    background: transparent;
+  }
+
+  .capture-library {
+    grid-area: library;
+  }
+
+  .capture-name-shortcut {
+    grid-area: naming;
+  }
+
+  .mode-seg button {
+    min-height: 44px;
+    min-width: 64px;
+    font-size: 12px;
   }
 
   .readout {
     grid-area: readout;
     min-width: 0;
     align-items: stretch;
+    justify-content: space-between;
+    padding: 4px 0 8px;
+  }
+
+  .bottombar[data-active="false"] .readout {
+    display: none;
   }
 
   .readout > div {
@@ -2197,7 +2451,8 @@ a:hover {
   }
 
   .readout > div:first-child {
-    padding-left: 8px;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .readout dt {
@@ -2209,23 +2464,24 @@ a:hover {
   }
 
   .shutter-stack {
-    grid-area: shutter;
+    display: contents;
   }
 
   .shutter {
-    width: 60px;
-    height: 60px;
-    border-width: 3px;
+    grid-area: shutter;
+    width: 82px;
+    height: 82px;
+    border-width: 4px;
   }
 
   .shutter-dot {
-    width: 40px;
-    height: 40px;
+    width: 62px;
+    height: 62px;
   }
 
   .shutter[data-recording="true"] .shutter-dot {
-    width: 22px;
-    height: 22px;
+    width: 30px;
+    height: 30px;
   }
 
   .command-actions {
@@ -2243,8 +2499,72 @@ a:hover {
   }
 
   .stage-left {
-    margin: 10px 0 0 12px;
-    gap: 8px;
+    position: relative;
+    margin: 8px 10px 0;
+    gap: 0;
+  }
+
+  .vf-tools {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .preview-tools-toggle {
+    display: flex;
+    gap: 6px;
+    width: auto;
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 12px;
+    background: var(--panel-bg);
+  }
+
+  .preview-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .rotate-hint {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--glass-strong);
+    font-size: 12px;
+  }
+
+  .preview-settings {
+    display: none;
+  }
+
+  .stage-left[data-tools-open="true"] .preview-settings {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 100%;
+    max-height: calc(100dvh - 260px);
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--hairline-2);
+    border-radius: 12px;
+    background: var(--panel-bg);
+  }
+
+  .stage-left .focus-peaking-control {
+    max-width: 100%;
+  }
+
+  .stage-left .overlay-card {
+    max-width: 100%;
   }
 
   .inspect {
@@ -2254,6 +2574,7 @@ a:hover {
   .inspect button {
     width: auto;
     min-width: 52px;
+    min-height: 44px;
     border-top: 0;
     border-left: 1px solid var(--hairline-2);
   }
@@ -2268,12 +2589,239 @@ a:hover {
     width: auto;
     border-left: 0;
     border-top: 1px solid var(--hairline-2);
-    border-radius: 8px 8px 0 0;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .panel-head .eyebrow {
+    display: none;
+  }
+
+  .panel .icon-button,
+  .topbar .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .panel .search {
+    min-height: 46px;
+    border-radius: 10px;
+  }
+
+  .panel input,
+  .panel select {
+    font-size: 16px;
+  }
+
+  .chip {
+    min-height: 44px;
+    border-radius: 8px;
+  }
+
+  .session-row {
+    padding-top: 16px;
+    padding-bottom: 16px;
+    gap: 8px;
+  }
+
+  .session-head {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .session-name {
+    font-size: 16px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    width: 100%;
+  }
+
+  .session-meta {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .session-meta .session-uuid {
+    display: none;
+  }
+
+  .delete-backdrop {
+    align-items: flex-end;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .session-delete-confirm {
+    width: 100%;
+    padding: 22px 18px;
+  }
+
+  .session-delete-confirm .network-confirm-actions button {
+    min-height: 52px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .session-delete-confirm .panel-danger {
+    background: var(--fault);
+    color: #080a0b;
   }
 }
 
-@media (max-width: 380px) {
-  .readout > div {
-    padding: 7px 8px;
+@media (max-width: 859px) and (max-height: 520px) {
+  /* 横屏和软键盘展开后保留可滚动的命名区，避免快门被裁切。 */
+  .bottombar {
+    max-height: 65dvh;
+    overflow-y: auto;
+  }
+
+  .shutter {
+    width: 64px;
+    height: 64px;
+  }
+
+  .shutter-dot {
+    width: 44px;
+    height: 44px;
+  }
+
+  .name-hint {
+    display: none;
+  }
+}
+
+/* 横放手机：画面用满高度，操作集中到右手边。宽手机靠触屏条件识别。 */
+@media (max-width: 859px) and (orientation: landscape),
+  (max-width: 1200px) and (max-height: 600px) and (pointer: coarse) and (orientation: landscape) {
+  .echo {
+    --capture-rail: calc(96px + env(safe-area-inset-right, 0px));
+    grid-template-columns: minmax(0, 1fr) var(--capture-rail);
+    grid-template-rows: 44px minmax(0, 1fr);
+  }
+
+  .frame {
+    grid-row: 1 / -1;
+    grid-column: 1;
+  }
+
+  .topbar {
+    min-height: 0;
+    padding: 0 8px 0 max(10px, env(safe-area-inset-left, 0px));
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent);
+  }
+
+  .stage-left {
+    margin-left: max(10px, env(safe-area-inset-left, 0px));
+    margin-top: 4px;
+  }
+
+  .stage-left[data-tools-open="true"] .preview-settings {
+    max-height: calc(100dvh - 110px);
+  }
+
+  .bottombar {
+    grid-row: 1 / -1;
+    grid-column: 2;
+    padding: max(8px, env(safe-area-inset-top, 0px))
+      calc(6px + env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px)) 6px;
+    border-top: 0;
+    border-left: 1px solid var(--hairline-2);
+    max-height: none;
+    overflow: visible;
+  }
+
+  .command-form,
+  .bottombar[data-naming="true"] .command-form,
+  .bottombar[data-active="true"] .command-form {
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(44px, 1fr) auto minmax(44px, 1fr) auto;
+    grid-template-areas: "library" "shutter" "naming" "mode";
+    gap: 6px;
+  }
+
+  .capture-shortcut {
+    min-width: 64px;
+    min-height: 48px;
+    gap: 3px;
+    background: transparent;
+  }
+
+  .shutter {
+    justify-self: center;
+    width: 76px;
+    height: 76px;
+  }
+
+  .shutter-dot {
+    width: 56px;
+    height: 56px;
+  }
+
+  .mode-seg {
+    width: 100%;
+  }
+
+  .mode-seg button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 3px;
+    flex: 1;
+    font-size: 11px;
+  }
+
+  .mode-seg svg { display: none; }
+  .mode-seg button span { margin-left: 0 !important; }
+
+  .bottombar[data-naming="true"] .command-body {
+    position: fixed;
+    z-index: 50;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: calc(var(--capture-rail) + 12px);
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    max-width: 440px;
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+    margin: 0;
+    padding: 20px 14px 14px;
+    border: 1px solid var(--hairline-2);
+    border-radius: 12px;
+    background: var(--glass-strong);
+  }
+
+  .bottombar[data-active="true"] .command-body {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: calc(var(--capture-rail) + 12px);
+    bottom: 70px;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  .bottombar .session-title {
+    max-width: 100%;
+    padding: 2px 8px;
+    background: var(--glass);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .readout {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: calc(var(--capture-rail) + 12px);
+    bottom: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--glass);
+    pointer-events: none;
+  }
+
+  .panel {
+    grid-row: 1 / -1;
+    grid-column: 1 / -1;
+    justify-self: end;
+    width: min(520px, 100%);
+    border-radius: 0;
   }
 }

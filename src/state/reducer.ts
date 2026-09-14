@@ -46,6 +46,7 @@ export interface SessionsState {
 
 export interface SelectedSession {
   sessionId: string;
+  manifestSha256?: string | null;
   loading: boolean;
   detail: SessionDetail | null;
   outcome: UnsuccessfulOutcome | null;
@@ -107,7 +108,7 @@ export type Action =
   | { type: "sessions.query"; query: string }
   | { type: "sessions.filter"; filter: SessionFilter }
   | { type: "session.opened"; sessionId: string }
-  | { type: "session.detail"; sessionId: string; detail: SessionDetail }
+  | { type: "session.detail"; sessionId: string; detail: SessionDetail; manifestSha256?: string | null }
   | { type: "session.outcome"; sessionId: string; outcome: UnsuccessfulOutcome | null }
   | { type: "session.failed"; sessionId: string; error: VisibleError }
   | { type: "session.closed" }
@@ -368,7 +369,7 @@ export function reduceState(state: AppState, action: Action): AppState {
       }
       return {
         ...state,
-        selected: { ...state.selected, loading: false, detail: action.detail, error: null },
+        selected: { ...state.selected, loading: false, detail: action.detail, manifestSha256: action.manifestSha256 ?? null, error: null },
       };
     case "session.outcome":
       if (state.selected?.sessionId !== action.sessionId) {

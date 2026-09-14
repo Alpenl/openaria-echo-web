@@ -468,8 +468,24 @@ export const deviceApi = Object.freeze({
     }
     return requestJson<unknown>(`/sessions?${query.toString()}`).then(assertSessionList);
   },
-  getSession: (sessionId: string) =>
-    requestJson<SessionDetail>(`/sessions/${encodeURIComponent(sessionId)}`),
+  getSession: async (sessionId: string) => {
+    const response = await fetch(`${API_ROOT}/sessions/${encodeURIComponent(sessionId)}`, {
+      cache: "no-store",
+      headers: requestHeaders("application/json"),
+    });
+    if (!response.ok) throw await makeApiError(response);
+    const detail = (await response.json()) as SessionDetail;
+    if (detail.session_id !== sessionId) {
+      throw new DeviceApiError("设备返回了不同录制的详情", 502, "invalid_session_identity");
+    }
+    // 新版列表仅含元数据。删除使用本次网关校验过的清单身份，不依赖列表的制品校验。
+    const digest = response.headers.get("YLX-Manifest-SHA256");
+    const etag = response.headers.get("ETag");
+    const manifestSha256 = digest && /^[0-9a-f]{64}$/.test(digest) && etag === `"${digest}"`
+      ? digest
+      : null;
+    return { detail, manifestSha256 };
+  },
   deleteSessions: (
     sessions: readonly SessionDeleteItem[],
     key = idempotencyKey(),

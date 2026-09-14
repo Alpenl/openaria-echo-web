@@ -371,8 +371,8 @@ export class EchoStore {
       return;
     }
     try {
-      const detail = await deviceApi.getSession(sessionId);
-      this.dispatch({ type: "session.detail", sessionId, detail });
+      const { detail, manifestSha256 } = await deviceApi.getSession(sessionId);
+      this.dispatch({ type: "session.detail", sessionId, detail, manifestSha256 });
     } catch (error) {
       this.dispatch({ type: "session.failed", sessionId, error: visibleError(error) });
     }

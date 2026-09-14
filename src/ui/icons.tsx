@@ -27,6 +27,18 @@ export const SessionsIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const EditIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M14 5l5 5M4 20l5-1L20 8a2 2 0 00-5-5L4 15z" />
+  </Icon>
+);
+
+export const DeleteIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />
+  </Icon>
+);
+
 export const DeviceIcon = (props: IconProps) => (
   <Icon {...props}>
     <rect x="3.5" y="4.5" width="17" height="15" />
