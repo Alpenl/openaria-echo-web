@@ -1,8 +1,10 @@
+import { useState } from "preact/hooks";
+import { useMobileLayout } from "./useMobileLayout";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatVector, imuSyncLabel } from "./format";
 import { FocusPeakingControl, FocusPeakingOverlay } from "./FocusPeaking";
-import { ExpandIcon } from "./icons";
+import { DeviceIcon, ExpandIcon } from "./icons";
 import type { PreviewState } from "../api/preview";
 
 const INSPECT_MODES = [
@@ -72,12 +74,11 @@ export function Stage({
 }
 
 export function StageOverlays({ state }: { state: AppState }) {
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const mobile = useMobileLayout();
   const imu = state.capture?.snapshot.runtime.live_imu ?? null;
   const singleEye = state.inspect !== "both";
-
-  return (
-    <div class="stage-left">
-      <div class="vf-tools">
+  const inspect = (
         <div class="inspect" data-testid="preview-inspect" role="group" aria-label="预览取景">
           {INSPECT_MODES.map(({ mode, label }) => (
             <button
@@ -90,9 +91,8 @@ export function StageOverlays({ state }: { state: AppState }) {
             </button>
           ))}
         </div>
-        <FocusPeakingControl state={state} />
-      </div>
-
+  );
+  const imuCard = (
       <section class="overlay-card" aria-labelledby="raw-imu-heading">
         <h2 id="raw-imu-heading" class="eyebrow">
           RAW IMU
@@ -119,7 +119,8 @@ export function StageOverlays({ state }: { state: AppState }) {
         </dl>
       </section>
 
-      {singleEye ? (
+  );
+  const cropControl = (singleEye ? (
         <button
           type="button"
           class="crop-note"
@@ -128,7 +129,41 @@ export function StageOverlays({ state }: { state: AppState }) {
           <ExpandIcon size={15} />
           {state.fullFrame ? "全画幅 · 回到铺满" : "已裁切取景 · 看全画幅"}
         </button>
-      ) : null}
+      ) : null);
+
+  if (!mobile) {
+    return (
+      <div class="stage-left">
+        <div class="vf-tools">
+          {inspect}
+          <FocusPeakingControl state={state} />
+        </div>
+        {imuCard}
+        {cropControl}
+      </div>
+    );
+  }
+  return (
+    <div class="stage-left" data-tools-open={String(toolsOpen)}>
+      <div class="vf-tools">
+        {inspect}
+        <button
+          type="button"
+          class="preview-tools-toggle icon-button"
+          aria-label="取景工具"
+          aria-expanded={toolsOpen}
+          aria-controls="preview-settings"
+          onClick={() => setToolsOpen(!toolsOpen)}
+        >
+          <DeviceIcon size={18} />
+          <span>工具</span>
+        </button>
+      </div>
+      <div class="preview-settings" id="preview-settings">
+        <FocusPeakingControl state={state} />
+        {imuCard}
+        {cropControl}
+      </div>
     </div>
   );
 }

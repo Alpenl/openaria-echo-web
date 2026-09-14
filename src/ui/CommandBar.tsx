@@ -65,11 +65,21 @@ function useDisplayedElapsedSeconds(
 export function CommandBar({ state }: { state: AppState }) {
   const [displayName, setDisplayName] = useState("");
   const [mode, setMode] = useState<"record" | "calibration">("record");
+  const [nameEditing, setNameEditing] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const snapshot = state.capture?.snapshot;
   const deviceState = snapshot?.device_state ?? null;
   const active = snapshot?.active_recording?.recording_state ?? null;
   const progress = active?.progress ?? null;
+  useEffect(() => {
+    if (nameEditing) {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    }
+  }, [nameEditing]);
+  useEffect(() => {
+    if (active) setNameEditing(false);
+  }, [active?.session_id]);
 
   const connected = state.connection === "connected";
   const recording = deviceState === "recording";
@@ -114,7 +124,7 @@ export function CommandBar({ state }: { state: AppState }) {
         : "开始录制";
 
   return (
-    <footer class="bottombar" data-active={String(Boolean(active))}>
+    <footer class="bottombar" data-active={String(Boolean(active))} data-naming={String(nameEditing)}>
       <form
         class="command-form"
         onSubmit={(event) => {
@@ -186,17 +196,18 @@ export function CommandBar({ state }: { state: AppState }) {
           type="button"
           class="capture-shortcut capture-name-shortcut"
           aria-label="命名"
+          aria-expanded={nameEditing}
+          aria-controls="capture-name-editor"
           disabled={Boolean(active) || !connected || !cameraConnected || state.commandPending || deviceState !== "idle"}
           onClick={() => {
-            nameInputRef.current?.focus();
-            nameInputRef.current?.select();
+            setNameEditing(!nameEditing);
           }}
         >
           <EditIcon size={24} />
-          <span>命名</span>
+          <span title={displayName}>{displayName || "命名"}</span>
         </button>
 
-        <div class="command-body">
+        <div class="command-body" id="capture-name-editor">
         {active ? (
           <>
             <span class="eyebrow">当前会话</span>
@@ -210,6 +221,7 @@ export function CommandBar({ state }: { state: AppState }) {
             <label class="eyebrow" for="capture-name">
               录制名称（可选）
             </label>
+            <button type="button" class="name-done" onClick={() => setNameEditing(false)}>完成</button>
             <div class="name-field">
               <input
                 ref={nameInputRef}
@@ -230,6 +242,7 @@ export function CommandBar({ state }: { state: AppState }) {
                   if (event.key === "Enter" && !event.isComposing) {
                     event.preventDefault();
                     nameInputRef.current?.blur();
+                    setNameEditing(false);
                   }
                 }}
               />

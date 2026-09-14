@@ -190,6 +190,15 @@ a:hover {
   background: var(--void);
 }
 
+.preview-tools-toggle,
+.name-done {
+  display: none;
+}
+
+.preview-settings {
+  display: contents;
+}
+
 .frame img,
 .frame canvas {
   position: absolute;
@@ -2217,16 +2226,27 @@ a:hover {
 /* ------------------------------------------------------------ 窄屏与横屏 */
 
 @media (max-width: 859px) {
-  /* 窄屏顶栏两行：品牌与状态一行、事实一行，图标留在第一行右端。 */
+  /* 手机把取景器限制在真实可见区域，画面不再被上下操作栏遮住。 */
+  .frame {
+    position: relative;
+    grid-row: 2;
+    grid-column: 1;
+    min-height: 0;
+  }
+
+  .vf-tick[data-edge="top"] { top: 12px; }
+  .vf-tick[data-edge="bottom"] { bottom: 12px; }
+
   .topbar {
-    flex-wrap: wrap;
-    row-gap: 6px;
-    gap: 10px;
-    padding: 10px 12px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--void);
   }
 
   .topbar .brand {
     order: 1;
+    flex: 1;
   }
 
   .topbar .state-chip {
@@ -2240,7 +2260,11 @@ a:hover {
   }
 
   .topbar .brand + .state-chip {
-    margin-right: auto;
+    margin-right: 0;
+  }
+
+  .topbar > button[aria-label="会话台账"] {
+    display: none;
   }
 
   .focus-peaking-control {
@@ -2253,39 +2277,88 @@ a:hover {
   }
 
   .topbar-facts {
-    order: 4;
-    width: 100%;
-    margin-left: 0;
-    gap: 10px;
+    display: contents;
+  }
+
+  .topbar-facts > span,
+  .topbar-facts > output {
+    display: none;
+  }
+
+  .topbar-facts .connection-method-trigger {
+    order: 3;
+    flex: none;
+    min-height: 44px;
     font-size: 11px;
-    flex-wrap: wrap;
-    row-gap: 4px;
   }
 
   .bottombar {
     flex-wrap: wrap;
     gap: 10px;
     min-height: 0;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)) 12px;
   }
 
-  /* 手机相机操作区：名称、读数各一行，大快门居中，常用操作放在两侧。 */
+  /* 首屏只保留快门和快捷入口，命名按需展开。模式切换放在快门下方。 */
   .command-form {
     order: 1;
     flex: 1 1 100%;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     grid-template-areas:
-      "name name name"
-      "readout readout readout"
-      "library shutter naming";
+      "library shutter naming"
+      "mode mode mode";
     align-items: center;
-    gap: 10px;
+    gap: 2px 10px;
   }
 
   .command-body {
     grid-area: name;
     min-width: 0;
+    display: none;
+  }
+
+  .bottombar[data-naming="true"] .command-form,
+  .bottombar[data-active="true"] .command-form {
+    grid-template-areas:
+      "name name name"
+      "readout readout readout"
+      "library shutter naming"
+      "mode mode mode";
+  }
+
+  .bottombar[data-naming="true"] .command-body {
+    position: relative;
+    display: flex;
+    padding-top: 14px;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .name-done {
+    position: absolute;
+    display: block;
+    right: 0;
+    top: 0;
+    height: 44px;
+    padding: 0 12px;
+    border: 0;
+    background: transparent;
+    color: var(--link);
+  }
+
+  .bottombar[data-active="true"] .command-body {
+    display: flex;
+  }
+
+  .bottombar[data-active="true"] .command-body .eyebrow,
+  .bottombar[data-active="true"] .session-uuid {
+    display: none;
+  }
+
+  .bottombar .session-title {
+    font-size: 13px;
+    text-align: center;
   }
 
   .name-input {
@@ -2308,12 +2381,35 @@ a:hover {
     justify-self: center;
     min-width: 64px;
     min-height: 64px;
-    margin-top: 30px;
+    margin-top: 0;
+    max-width: 88px;
     border: 0;
     border-radius: 14px;
     background: var(--sunken);
     color: var(--ink-2);
     font-size: 12px;
+  }
+
+  .capture-shortcut > span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mode-seg {
+    grid-area: mode;
+    justify-self: center;
+    border: 0;
+  }
+
+  .mode-seg button {
+    border: 0;
+    border-radius: 8px;
+  }
+
+  .shutter-caption {
+    display: none;
   }
 
   .capture-shortcut:disabled {
@@ -2340,6 +2436,7 @@ a:hover {
     min-width: 0;
     align-items: stretch;
     justify-content: space-between;
+    padding: 4px 0 8px;
   }
 
   .bottombar[data-active="false"] .readout {
@@ -2367,10 +2464,11 @@ a:hover {
   }
 
   .shutter-stack {
-    grid-area: shutter;
+    display: contents;
   }
 
   .shutter {
+    grid-area: shutter;
     width: 82px;
     height: 82px;
     border-width: 4px;
@@ -2401,8 +2499,56 @@ a:hover {
   }
 
   .stage-left {
-    margin: 10px 0 0 12px;
-    gap: 8px;
+    position: relative;
+    margin: 8px 10px 0;
+    gap: 0;
+  }
+
+  .vf-tools {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .preview-tools-toggle {
+    display: flex;
+    gap: 6px;
+    width: auto;
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 12px;
+    background: var(--panel-bg);
+  }
+
+  .preview-settings {
+    display: none;
+  }
+
+  .stage-left[data-tools-open="true"] .preview-settings {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 100%;
+    max-height: calc(100dvh - 260px);
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--hairline-2);
+    border-radius: 12px;
+    background: var(--panel-bg);
+  }
+
+  .stage-left .focus-peaking-control {
+    max-width: 100%;
+  }
+
+  .stage-left .overlay-card {
+    max-width: 100%;
   }
 
   .inspect {
@@ -2412,6 +2558,7 @@ a:hover {
   .inspect button {
     width: auto;
     min-width: 52px;
+    min-height: 44px;
     border-top: 0;
     border-left: 1px solid var(--hairline-2);
   }
@@ -2510,15 +2657,6 @@ a:hover {
     overflow-y: auto;
   }
 
-  .command-form {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "name shutter" "readout shutter";
-  }
-
-  .capture-shortcut {
-    display: none;
-  }
-
   .shutter {
     width: 64px;
     height: 64px;
@@ -2529,8 +2667,7 @@ a:hover {
     height: 44px;
   }
 
-  .name-hint,
-  .shutter-caption {
+  .name-hint {
     display: none;
   }
 }

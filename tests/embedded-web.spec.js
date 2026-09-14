@@ -21,10 +21,28 @@ test.beforeEach(async ({ request }) => {
 async function openPanel(page, name) {
   const panel = page.getByRole("complementary", { name });
   if (!(await panel.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name, exact: true }).click();
+    const trigger = page.getByRole("button", { name, exact: true });
+    if (name === "会话台账" && !(await trigger.isVisible())) {
+      await page.getByRole("button", { name: "打开录制列表", exact: true }).click();
+    } else {
+      await trigger.click();
+    }
   }
   await expect(panel).toBeVisible();
   return panel;
+}
+
+async function fillCaptureName(page, name) {
+  const input = page.getByLabel("录制名称（可选）");
+  if (!(await input.isVisible())) {
+    await page.getByRole("button", { name: "命名", exact: true }).click();
+  }
+  await input.fill(name);
+}
+
+async function openPreviewTools(page) {
+  const trigger = page.getByRole("button", { name: "取景工具", exact: true });
+  if (await trigger.isVisible()) await trigger.click();
 }
 
 /**
@@ -182,6 +200,7 @@ test("权威快照呈现设备、容量和真实 raw IMU", async ({ page }) => {
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.getByTestId("storage-available")).toHaveText("82.0 GiB");
   await expect(page.getByTestId("temperature")).toHaveText("43.5 °C");
+  await openPreviewTools(page);
   const rawImu = page.getByRole("region", { name: "RAW IMU" });
   await expect(rawImu).toBeVisible();
   await expect(rawImu.locator("dl > div")).toHaveCount(3);
@@ -317,7 +336,7 @@ test("漏掉 SSE 事件时可见页面仍从权威状态自动收敛", async ({ 
 
 test("v4 终态 state 事件把新封存会话同步到台账", async ({ page, request }) => {
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("终态事件封存");
+  await fillCaptureName(page, "终态事件封存");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
@@ -456,6 +475,7 @@ test("网页明确显示相机未暴露自动对焦控制", async ({ page, reque
 test("峰值对焦默认启用并在预览边缘绘制高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
 
   await expect(page.getByTestId("preview-image")).toBeVisible();
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
@@ -492,6 +512,7 @@ test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
 test("峰值对焦在后台暂停并在录制期间保持启用", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
 
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
   await expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -510,7 +531,7 @@ test("峰值对焦在后台暂停并在录制期间保持启用", async ({ page 
   });
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 
-  await page.getByLabel("录制名称").fill("峰值对焦保持启用");
+  await fillCaptureName(page, "峰值对焦保持启用");
   await page.getByRole("button", { name: "开始录制" }).click();
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
@@ -938,7 +959,7 @@ test("能力允许时标定入口只发送 calibration 模式", async ({ page, r
   const calibrationMode = page.getByRole("button", { name: "标定", exact: true });
   await expect(calibrationMode).toBeEnabled();
   await calibrationMode.click();
-  await page.getByLabel("录制名称（可选）").fill("标定分眼 01");
+  await fillCaptureName(page, "标定分眼 01");
   await page.getByRole("button", { name: "开始标定录制" }).click();
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
@@ -1002,7 +1023,7 @@ test("标定能力在请求时过期会显示设备错误且恢复后可重试",
 test("标定录制终态刷新后进入会话台账", async ({ page }) => {
   await page.goto("/");
   const name = "标定终态刷新";
-  await page.getByLabel("录制名称（可选）").fill(name);
+  await fillCaptureName(page, name);
   await page.getByRole("button", { name: "标定", exact: true }).click();
   await page.getByRole("button", { name: "开始标定录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
@@ -1018,13 +1039,14 @@ test("录制命令在权威快照到达前保持待机", async ({ page, request 
   await page.goto("/");
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
 
-  await page.getByLabel("录制名称").fill("走廊采集 01");
+  await fillCaptureName(page, "走廊采集 01");
   await page.getByRole("button", { name: "开始录制" }).click();
 
   await expect(page.getByRole("button", { name: "正在发送" })).toBeDisabled();
   await expect(page.getByTestId("capture-state")).toHaveText("待机");
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
-  await expect(page.getByText("走廊采集 01", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("current-session-name")).toHaveText("走廊采集 01");
+  await expect(page.getByTestId("current-session-name")).toBeVisible();
 });
 
 test("缺少 crypto.randomUUID 的 HTTP LAN 浏览器仍能发送录制命令", async ({ page, request }) => {
@@ -1035,7 +1057,7 @@ test("缺少 crypto.randomUUID 的 HTTP LAN 浏览器仍能发送录制命令", 
     });
   });
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("无 randomUUID 兼容");
+  await fillCaptureName(page, "无 randomUUID 兼容");
 
   await page.getByRole("button", { name: "开始录制" }).click();
 
@@ -1055,7 +1077,7 @@ test("缺少 crypto.randomUUID 的 HTTP LAN 浏览器仍能发送录制命令", 
 test("录制命令只在本次请求结束后解锁", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { commandDelayMs: 350 } });
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("单次提交");
+  await fillCaptureName(page, "单次提交");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByRole("button", { name: "正在发送" })).toBeDisabled();
 
@@ -1142,7 +1164,7 @@ test("customer 写请求携带 bearer、同值 CSRF 与浏览器 Origin", async 
   });
 
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("customer csrf");
+  await fillCaptureName(page, "customer csrf");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
@@ -1207,7 +1229,7 @@ test("事件流重连处理首个权威事件前保持写操作禁用", async ({
 test("结束录制后的短暂事件流重连不显示断开故障", async ({ page, request }) => {
   await page.goto("/");
   await expect(page.locator(".connection")).toHaveText("已连接");
-  await page.getByLabel("录制名称").fill("短暂重连");
+  await fillCaptureName(page, "短暂重连");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
@@ -1284,7 +1306,7 @@ test("慢预览响应不排队且录制期间继续更新左眼画面", async ({
     )
     .toBeGreaterThan(0);
 
-  await page.getByLabel("录制名称").fill("预览不中断");
+  await fillCaptureName(page, "预览不中断");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
@@ -1381,7 +1403,7 @@ test("D-049 不挂载可移除介质和安全换盘工作流", async ({ page, re
   await expect(page.getByTestId("media-release")).toHaveCount(0);
   await expect(page.getByText("可以移除存储设备", { exact: true })).toHaveCount(0);
 
-  await page.getByLabel("录制名称").fill("固定存储测试");
+  await fillCaptureName(page, "固定存储测试");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await expect(page.getByRole("button", { name: "安全换盘" })).toHaveCount(0);
@@ -1416,7 +1438,7 @@ test("网络 mutation 无明确响应时稳定失败且不等待重连对账", a
 test("结束录制接受空 204 并重新读取权威状态", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { stopReturns204: true } });
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("空响应结束");
+  await fillCaptureName(page, "空响应结束");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
@@ -1446,7 +1468,7 @@ test("结束录制后新封存会话无刷新有界同步到台账", async ({ pa
 
   const names = ["终态刷新第一段", "终态刷新第二段"];
   for (const name of names) {
-    await page.getByLabel("录制名称").fill(name);
+    await fillCaptureName(page, name);
     await page.getByRole("button", { name: "开始录制" }).click();
     await expect(page.getByTestId("capture-state")).toHaveText("录制中");
     await page.getByRole("button", { name: "结束录制" }).click();
@@ -1471,7 +1493,7 @@ test("会话晚于终态发布时仍自动进入台账", async ({ page, request 
   await page.goto("/");
 
   const name = "延迟发布仍自动刷新";
-  await page.getByLabel("录制名称").fill(name);
+  await fillCaptureName(page, name);
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await page.getByRole("button", { name: "结束录制" }).click();
@@ -1486,7 +1508,7 @@ test("会话晚于终态发布时仍自动进入台账", async ({ page, request 
 test("开始录制原样显示 API problem 且服务恢复后可重试", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { startProblem: true } });
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("错误恢复");
+  await fillCaptureName(page, "错误恢复");
   await page.getByRole("button", { name: "开始录制" }).click();
 
   const alert = page.getByRole("alert");
@@ -1520,7 +1542,7 @@ test("开始录制原样显示 API problem 且服务恢复后可重试", async (
 
 test("结束录制原样显示 API problem 且服务恢复后可重试", async ({ page, request }) => {
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("结束错误恢复");
+  await fillCaptureName(page, "结束错误恢复");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await request.post("/__fixture/config", { data: { stopProblem: true } });
@@ -1634,6 +1656,7 @@ test("录制命名回车只收起输入，清空后按设备时间命名", async
   await input.press("Enter");
   await expect(input).not.toBeFocused();
   expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(0);
+  if (!(await input.isVisible())) await page.getByRole("button", { name: "命名", exact: true }).click();
   await page.getByRole("button", { name: "清空名称" }).click();
   await expect(input).toHaveValue("");
   await expect(input).toBeFocused();
@@ -1730,7 +1753,12 @@ test("手机小屏和横屏的录制及删除操作保持可见且无溢出", as
     const shutter = page.getByRole("button", { name: "开始录制", exact: true });
     await expect(shutter).toBeEnabled();
     await expect(shutter).toBeInViewport();
+    await expect(page.getByLabel("录制名称（可选）")).not.toBeVisible();
+    const frame = await page.locator(".frame").boundingBox();
+    expect(frame.height).toBeGreaterThan(viewport.height * (viewport.height > viewport.width ? 0.60 : 0.50));
+    await page.getByRole("button", { name: "命名", exact: true }).click();
     await expect(page.getByLabel("录制名称（可选）")).toBeInViewport();
+    await page.getByRole("button", { name: "完成", exact: true }).click();
     const bounds = await shutter.boundingBox();
     expect(bounds?.width).toBeGreaterThanOrEqual(viewport.height > 520 ? 82 : 64);
     await expectNoHorizontalOverflow(page, `${viewport.width}×${viewport.height} capture`);
@@ -1827,7 +1855,7 @@ test("两个浏览器最终收敛到同一录制状态", async ({ browser }) => 
     expect(second.getByTestId("capture-state")).toHaveText("待机"),
   ]);
 
-  await first.getByLabel("录制名称").fill("双客户端测试");
+  await fillCaptureName(first, "双客户端测试");
   await first.getByRole("button", { name: "开始录制" }).click();
   await Promise.all([
     expect(first.getByTestId("capture-state")).toHaveText("录制中"),
@@ -1844,7 +1872,7 @@ test("两个浏览器最终收敛到同一录制状态", async ({ browser }) => 
 
 test("未成功终态保留诊断且不伪装成封存会话", async ({ page, request }) => {
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("失败录制");
+  await fillCaptureName(page, "失败录制");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await request.post("/__fixture/fail-capture");
@@ -1868,7 +1896,7 @@ test("未成功终态保留诊断且不伪装成封存会话", async ({ page, re
 
 test("progress 事件触发权威快照刷新并显示录制计数", async ({ page, request }) => {
   await page.goto("/");
-  await page.getByLabel("录制名称").fill("进度测试");
+  await fillCaptureName(page, "进度测试");
   await page.getByRole("button", { name: "开始录制" }).click();
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
 
