@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { useMobileLayout } from "./useMobileLayout";
+import { MobileViewButton } from "./MobileViewButton";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatVector, imuSyncLabel } from "./format";
@@ -147,6 +148,8 @@ export function StageOverlays({ state }: { state: AppState }) {
     <div class="stage-left" data-tools-open={String(toolsOpen)}>
       <div class="vf-tools">
         {inspect}
+        <div class="preview-actions">
+        <MobileViewButton />
         <button
           type="button"
           class="preview-tools-toggle icon-button"
@@ -158,6 +161,7 @@ export function StageOverlays({ state }: { state: AppState }) {
           <DeviceIcon size={18} />
           <span>工具</span>
         </button>
+        </div>
       </div>
       <div class="preview-settings" id="preview-settings">
         <FocusPeakingControl state={state} />

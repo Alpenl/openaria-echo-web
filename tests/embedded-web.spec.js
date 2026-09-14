@@ -1747,7 +1747,7 @@ test("删除等待期间焦点留在确认框，失败后保留录制并允许�
 test("手机小屏和横屏的录制及删除操作保持可见且无溢出", async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== "手机", "移动端布局检查");
   await request.post("/__fixture/config", { data: { sessionDeletion: true } });
-  for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 640 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+  for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 640 }, { width: 390, height: 844 }, { width: 844, height: 390 }, { width: 932, height: 430 }, { width: 740, height: 320 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
     const shutter = page.getByRole("button", { name: "开始录制", exact: true });
@@ -1756,6 +1756,13 @@ test("手机小屏和横屏的录制及删除操作保持可见且无溢出", as
     await expect(page.getByLabel("录制名称（可选）")).not.toBeVisible();
     const frame = await page.locator(".frame").boundingBox();
     expect(frame.height).toBeGreaterThan(viewport.height * (viewport.height > viewport.width ? 0.60 : 0.50));
+    if (viewport.width > viewport.height) {
+      expect(frame.height).toBe(viewport.height);
+      expect(frame.width).toBeGreaterThan(viewport.width * 0.85);
+      const rail = await page.locator(".bottombar").boundingBox();
+      expect(rail.x).toBe(frame.width);
+      expect(rail.height).toBe(viewport.height);
+    }
     await page.getByRole("button", { name: "命名", exact: true }).click();
     await expect(page.getByLabel("录制名称（可选）")).toBeInViewport();
     await page.getByRole("button", { name: "完成", exact: true }).click();
@@ -1771,6 +1778,39 @@ test("手机小屏和横屏的录制及删除操作保持可见且无溢出", as
     await expectNoHorizontalOverflow(page, `${viewport.width}×${viewport.height} delete`);
     await dialog.getByRole("button", { name: "取消", exact: true }).click();
   }
+});
+
+test("手机旋转后保持录制名称与结束录制入口，预览占满高度", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "手机", "移动端旋转检查");
+  await page.goto("/");
+  await fillCaptureName(page, "横屏连续录制");
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  await page.setViewportSize({ width: 932, height: 430 });
+  await expect(page.getByRole("button", { name: "命名", exact: true })).toContainText("横屏连续录制");
+  await page.getByRole("button", { name: "开始录制", exact: true }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("录制中");
+  await expect(page.getByTestId("current-session-name")).toBeInViewport();
+  await expect(page.getByTestId("elapsed-seconds")).toBeInViewport();
+  expect((await page.locator(".frame").boundingBox()).height).toBe(430);
+  await expect(page.getByRole("button", { name: "结束录制", exact: true })).toBeInViewport();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "结束录制", exact: true })).toBeInViewport();
+  await page.getByRole("button", { name: "结束录制", exact: true }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+});
+
+test("不支持全屏的手机提示手动横放并继续取景", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "手机", "移动端全屏降级检查");
+  await page.addInitScript(() => {
+    document.documentElement.requestFullscreen = () => Promise.reject(new Error("Fullscreen unavailable"));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "横屏全屏取景", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "请将手机横放" })).toBeVisible();
+  await page.setViewportSize({ width: 932, height: 430 });
+  await expect(page.getByText("请将手机横放，画面会自动铺开")).toBeHidden();
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始录制", exact: true })).toBeEnabled();
 });
 
 test("D-049 冻结中断结果只显示未成功且不恢复", async ({ page, request }) => {

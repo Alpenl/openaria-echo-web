@@ -2225,7 +2225,7 @@ a:hover {
 
 /* ------------------------------------------------------------ 窄屏与横屏 */
 
-@media (max-width: 859px) {
+@media (max-width: 859px), (max-width: 1200px) and (max-height: 600px) and (pointer: coarse) {
   /* 手机把取景器限制在真实可见区域，画面不再被上下操作栏遮住。 */
   .frame {
     position: relative;
@@ -2521,6 +2521,22 @@ a:hover {
     background: var(--panel-bg);
   }
 
+  .preview-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .rotate-hint {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--glass-strong);
+    font-size: 12px;
+  }
+
   .preview-settings {
     display: none;
   }
@@ -2669,5 +2685,143 @@ a:hover {
 
   .name-hint {
     display: none;
+  }
+}
+
+/* 横放手机：画面用满高度，操作集中到右手边。宽手机靠触屏条件识别。 */
+@media (max-width: 859px) and (orientation: landscape),
+  (max-width: 1200px) and (max-height: 600px) and (pointer: coarse) and (orientation: landscape) {
+  .echo {
+    --capture-rail: calc(96px + env(safe-area-inset-right, 0px));
+    grid-template-columns: minmax(0, 1fr) var(--capture-rail);
+    grid-template-rows: 44px minmax(0, 1fr);
+  }
+
+  .frame {
+    grid-row: 1 / -1;
+    grid-column: 1;
+  }
+
+  .topbar {
+    min-height: 0;
+    padding: 0 8px 0 max(10px, env(safe-area-inset-left, 0px));
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent);
+  }
+
+  .stage-left {
+    margin-left: max(10px, env(safe-area-inset-left, 0px));
+    margin-top: 4px;
+  }
+
+  .stage-left[data-tools-open="true"] .preview-settings {
+    max-height: calc(100dvh - 110px);
+  }
+
+  .bottombar {
+    grid-row: 1 / -1;
+    grid-column: 2;
+    padding: max(8px, env(safe-area-inset-top, 0px))
+      calc(6px + env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px)) 6px;
+    border-top: 0;
+    border-left: 1px solid var(--hairline-2);
+    max-height: none;
+    overflow: visible;
+  }
+
+  .command-form,
+  .bottombar[data-naming="true"] .command-form,
+  .bottombar[data-active="true"] .command-form {
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(44px, 1fr) auto minmax(44px, 1fr) auto;
+    grid-template-areas: "library" "shutter" "naming" "mode";
+    gap: 6px;
+  }
+
+  .capture-shortcut {
+    min-width: 64px;
+    min-height: 48px;
+    gap: 3px;
+    background: transparent;
+  }
+
+  .shutter {
+    justify-self: center;
+    width: 76px;
+    height: 76px;
+  }
+
+  .shutter-dot {
+    width: 56px;
+    height: 56px;
+  }
+
+  .mode-seg {
+    width: 100%;
+  }
+
+  .mode-seg button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 3px;
+    flex: 1;
+    font-size: 11px;
+  }
+
+  .mode-seg svg { display: none; }
+  .mode-seg button span { margin-left: 0 !important; }
+
+  .bottombar[data-naming="true"] .command-body {
+    position: fixed;
+    z-index: 50;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: calc(var(--capture-rail) + 12px);
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    max-width: 440px;
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+    margin: 0;
+    padding: 20px 14px 14px;
+    border: 1px solid var(--hairline-2);
+    border-radius: 12px;
+    background: var(--glass-strong);
+  }
+
+  .bottombar[data-active="true"] .command-body {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: calc(var(--capture-rail) + 12px);
+    bottom: 70px;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  .bottombar .session-title {
+    max-width: 100%;
+    padding: 2px 8px;
+    background: var(--glass);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .readout {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left, 0px));
+    right: calc(var(--capture-rail) + 12px);
+    bottom: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--glass);
+    pointer-events: none;
+  }
+
+  .panel {
+    grid-row: 1 / -1;
+    grid-column: 1 / -1;
+    justify-self: end;
+    width: min(520px, 100%);
+    border-radius: 0;
   }
 }
