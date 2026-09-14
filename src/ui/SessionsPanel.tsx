@@ -1,8 +1,9 @@
+import { useState } from "preact/hooks";
 import type { AppState, SessionFilter } from "../state/reducer";
 import { store } from "../state/store";
 import type { SessionSummary } from "../api/types";
 import { formatGiB, formatSeconds, verdictLabel } from "./format";
-import { CloseIcon, RefreshIcon, SearchIcon } from "./icons";
+import { CloseIcon, DeleteIcon, RefreshIcon, SearchIcon } from "./icons";
 import { SessionDetail } from "./SessionDetail";
 
 const FILTERS: Array<{ id: SessionFilter; label: string; tone?: "caution" }> = [
@@ -36,8 +37,15 @@ function matches(session: SessionSummary, query: string, filter: SessionFilter):
 }
 
 export function SessionsPanel({ state }: { state: AppState }) {
+  const [deleteRequested, setDeleteRequested] = useState<string | null>(null);
   if (state.selected) {
-    return <SessionDetail state={state} />;
+    return (
+      <SessionDetail
+        key={state.selected.sessionId}
+        state={state}
+        requestDelete={deleteRequested === state.selected.sessionId}
+      />
+    );
   }
 
   const { items, query, filter, loading, loadedOnce, nextCursor, diagnostics } = state.sessions;
@@ -47,7 +55,7 @@ export function SessionsPanel({ state }: { state: AppState }) {
     <aside class="panel" aria-label="会话台账">
       <div class="panel-head">
         <span class="eyebrow">SESSIONS</span>
-        <span class="panel-title">会话台账</span>
+        <span class="panel-title">录制列表</span>
         <span style="flex-grow:1" />
         <button
           type="button"
@@ -103,31 +111,50 @@ export function SessionsPanel({ state }: { state: AppState }) {
 
       <div class="panel-body">
         {visible.map((session) => (
-          <button
-            key={session.session_id}
-            type="button"
-            class="session-row"
-            data-testid="session-item"
-            data-outcome={session.producer_outcome === "sealed" ? "sealed" : "unsuccessful"}
-            data-verdict={verdictOf(session)}
-            onClick={() => void store.openSession(session.session_id, session.producer_outcome)}
-          >
-            <span class="session-head">
-              <span class="session-name">{session.display_name}</span>
-              {/* 生产方声明与消费方判断分开投影，绝不合并成一个「状态」。 */}
-              <span class="verdict" data-verdict={verdictOf(session)}>
-                {verdictLabel(session.verification?.verdict)}
+          <div class="session-entry" key={session.session_id}>
+            <button
+              key={session.session_id}
+              type="button"
+              class="session-row"
+              data-testid="session-item"
+              data-outcome={session.producer_outcome === "sealed" ? "sealed" : "unsuccessful"}
+              data-verdict={verdictOf(session)}
+              onClick={() => {
+                setDeleteRequested(null);
+                void store.openSession(session.session_id, session.producer_outcome);
+              }}
+            >
+              <span class="session-head">
+                <span class="session-name">{session.display_name}</span>
+                {/* 生产方声明与消费方判断分开投影，绝不合并成一个「状态」。 */}
+                <span class="verdict" data-verdict={verdictOf(session)}>
+                  {verdictLabel(session.verification?.verdict)}
+                </span>
               </span>
-            </span>
-            <span class="session-meta">
-              <span>{formatSeconds(session.duration_seconds)}</span>
-              <span>{formatGiB(session.total_bytes)}</span>
-              <span class="producer">
-                {session.producer_outcome === "sealed" ? "已封存" : session.producer_outcome}
+              <span class="session-meta">
+                <span>{formatSeconds(session.duration_seconds)}</span>
+                <span>{formatGiB(session.total_bytes)}</span>
+                <span class="producer">
+                  {session.producer_outcome === "sealed" ? "已封存" : session.producer_outcome}
+                </span>
+                <code class="session-uuid">{session.session_id}</code>
               </span>
-              <code class="session-uuid">{session.session_id}</code>
-            </span>
-          </button>
+            </button>
+            {state.device?.capabilities.session_deletion && session.producer_outcome === "sealed" ? (
+              <button
+                type="button"
+                class="session-quick-delete"
+                aria-label={`删除录制：${session.display_name}`}
+                onClick={() => {
+                  setDeleteRequested(session.session_id);
+                  void store.openSession(session.session_id, session.producer_outcome);
+                }}
+              >
+                <DeleteIcon size={18} />
+                <span>删除</span>
+              </button>
+            ) : null}
+          </div>
         ))}
 
         {diagnostics.map((diagnostic) => (

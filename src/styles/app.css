@@ -163,6 +163,7 @@ a:hover {
 .echo {
   position: relative;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
   background: var(--void);
   display: grid;
@@ -886,6 +887,43 @@ a:hover {
   font-size: 15px;
 }
 
+.name-field {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+}
+
+.name-field .name-input {
+  padding-right: 48px;
+}
+
+.clear-name {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.name-hint {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.capture-shortcut {
+  display: none;
+}
+
+.shutter-caption {
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
 .name-input::placeholder {
   color: var(--ink-3);
 }
@@ -1114,6 +1152,41 @@ a:hover {
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   text-align: left;
+}
+
+.session-entry {
+  display: flex;
+  min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.session-entry .session-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.session-quick-delete {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  align-self: center;
+  min-width: 52px;
+  min-height: 52px;
+  margin-right: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.session-quick-delete:hover {
+  background: var(--sunken);
+  color: var(--fault);
 }
 
 /* 每行左侧一根 3px 状态色条：绿=可用、琥珀=未成功/未校验、红=不可用。 */
@@ -1909,15 +1982,51 @@ a:hover {
 }
 
 .session-delete {
+  flex: none;
   gap: 10px;
+  max-height: 45%;
+  overflow-y: auto;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--hairline-2);
 }
 
 .session-delete > .panel-danger {
-  align-self: flex-start;
+  width: 100%;
 }
 
 .session-delete-confirm {
   margin: 0;
+  width: min(420px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--hairline-2);
+  border-radius: 16px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.5);
+}
+
+.session-delete-confirm.network-confirm.danger {
+  background: var(--panel-bg);
+}
+
+.session-delete-confirm strong {
+  font-size: 18px;
+}
+
+.session-delete-confirm p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .network-progress {
@@ -2160,15 +2269,16 @@ a:hover {
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
   }
 
-  /* 窄屏两行：名称占满一行，快门与读数共享第二行，别让快门独占一整条。 */
+  /* 手机相机操作区：名称、读数各一行，大快门居中，常用操作放在两侧。 */
   .command-form {
     order: 1;
     flex: 1 1 100%;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     grid-template-areas:
-      "name name"
-      "shutter readout";
+      "name name name"
+      "readout readout readout"
+      "library shutter naming";
     align-items: center;
     gap: 10px;
   }
@@ -2180,13 +2290,60 @@ a:hover {
 
   .name-input {
     max-width: none;
-    height: 42px;
+    height: 46px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+
+  .name-field {
+    max-width: none;
+  }
+
+  .capture-shortcut {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    justify-self: center;
+    min-width: 64px;
+    min-height: 64px;
+    margin-top: 30px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--sunken);
+    color: var(--ink-2);
+    font-size: 12px;
+  }
+
+  .capture-shortcut:disabled {
+    color: var(--ink-4);
+    background: transparent;
+  }
+
+  .capture-library {
+    grid-area: library;
+  }
+
+  .capture-name-shortcut {
+    grid-area: naming;
+  }
+
+  .mode-seg button {
+    min-height: 44px;
+    min-width: 64px;
+    font-size: 12px;
   }
 
   .readout {
     grid-area: readout;
     min-width: 0;
     align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .bottombar[data-active="false"] .readout {
+    display: none;
   }
 
   .readout > div {
@@ -2197,7 +2354,8 @@ a:hover {
   }
 
   .readout > div:first-child {
-    padding-left: 8px;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .readout dt {
@@ -2213,19 +2371,19 @@ a:hover {
   }
 
   .shutter {
-    width: 60px;
-    height: 60px;
-    border-width: 3px;
+    width: 82px;
+    height: 82px;
+    border-width: 4px;
   }
 
   .shutter-dot {
-    width: 40px;
-    height: 40px;
+    width: 62px;
+    height: 62px;
   }
 
   .shutter[data-recording="true"] .shutter-dot {
-    width: 22px;
-    height: 22px;
+    width: 30px;
+    height: 30px;
   }
 
   .command-actions {
@@ -2268,12 +2426,111 @@ a:hover {
     width: auto;
     border-left: 0;
     border-top: 1px solid var(--hairline-2);
-    border-radius: 8px 8px 0 0;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .panel-head .eyebrow {
+    display: none;
+  }
+
+  .panel .icon-button,
+  .topbar .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .panel .search {
+    min-height: 46px;
+    border-radius: 10px;
+  }
+
+  .panel input,
+  .panel select {
+    font-size: 16px;
+  }
+
+  .chip {
+    min-height: 44px;
+    border-radius: 8px;
+  }
+
+  .session-row {
+    padding-top: 16px;
+    padding-bottom: 16px;
+    gap: 8px;
+  }
+
+  .session-head {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .session-name {
+    font-size: 16px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    width: 100%;
+  }
+
+  .session-meta {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .session-meta .session-uuid {
+    display: none;
+  }
+
+  .delete-backdrop {
+    align-items: flex-end;
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .session-delete-confirm {
+    width: 100%;
+    padding: 22px 18px;
+  }
+
+  .session-delete-confirm .network-confirm-actions button {
+    min-height: 52px;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .session-delete-confirm .panel-danger {
+    background: var(--fault);
+    color: #080a0b;
   }
 }
 
-@media (max-width: 380px) {
-  .readout > div {
-    padding: 7px 8px;
+@media (max-width: 859px) and (max-height: 520px) {
+  /* 横屏和软键盘展开后保留可滚动的命名区，避免快门被裁切。 */
+  .bottombar {
+    max-height: 65dvh;
+    overflow-y: auto;
+  }
+
+  .command-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name shutter" "readout shutter";
+  }
+
+  .capture-shortcut {
+    display: none;
+  }
+
+  .shutter {
+    width: 64px;
+    height: 64px;
+  }
+
+  .shutter-dot {
+    width: 44px;
+    height: 44px;
+  }
+
+  .name-hint,
+  .shutter-caption {
+    display: none;
   }
 }

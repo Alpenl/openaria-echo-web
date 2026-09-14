@@ -1615,6 +1615,136 @@ test("未声明远程删除能力时会话详情保持删除按钮禁用", async
   await expect(detail).toContainText("当前固件未声明远程删除能力");
 });
 
+test("录制命名回车只收起输入，清空后按设备时间命名", async ({ page, request }, testInfo) => {
+  await page.goto("/");
+  const input = page.getByLabel("录制名称（可选）");
+  await expect(page.getByRole("button", { name: "开始录制", exact: true })).toBeEnabled();
+  if (testInfo.project.name === "手机") {
+    await page.getByRole("button", { name: "命名", exact: true }).click();
+    await expect(input).toBeFocused();
+  }
+  await input.fill("手机采集 01");
+  const composingPrevented = await input.evaluate((element) => {
+    const event = new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(composingPrevented).toBe(false);
+  await expect(input).toBeFocused();
+  await input.press("Enter");
+  await expect(input).not.toBeFocused();
+  expect(await fixtureRequestCount(request, "/api/v4/capture/start")).toBe(0);
+  await page.getByRole("button", { name: "清空名称" }).click();
+  await expect(input).toHaveValue("");
+  await expect(input).toBeFocused();
+  await page.getByRole("button", { name: "开始录制", exact: true }).click();
+  await expect(page.getByTestId("current-session-name")).toHaveText(/^录制 \d{4}-/);
+  await page.getByRole("button", { name: "结束录制", exact: true }).click();
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+});
+
+test("列表无校验摘要时快捷删除使用详情身份且必须确认", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionDeletion: true } });
+  await page.route("**/api/v4/sessions?*", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.items.forEach((item) => { item.verification = null; });
+    await route.fulfill({ response, json });
+  });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await page.getByRole("button", { name: "删除录制：入口标定", exact: true }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("入口标定");
+  expect(await fixtureRequestCount(request, "/api/v4/sessions/delete")).toBe(0);
+  await expect(dialog.getByRole("button", { name: "取消", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "确认删除", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "取消", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(await fixtureRequestCount(request, "/api/v4/sessions/delete")).toBe(0);
+  await page.getByTestId("delete-session").click();
+  await dialog.getByRole("button", { name: "确认删除", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "会话台账" })).toBeVisible();
+  await expect(page.getByTestId("session-item").filter({ hasText: "入口标定" })).toHaveCount(0);
+  expect(await fixtureRequestCount(request, "/api/v4/sessions/delete")).toBe(1);
+});
+
+test("详情摘要不一致且列表未校验时不开放删除", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionDeletion: true } });
+  await page.route("**/api/v4/sessions?*", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.items.forEach((item) => { item.verification = null; });
+    await route.fulfill({ response, json });
+  });
+  await page.route("**/api/v4/sessions/01989f6a-2c00-7a1b-8c2d-3e4f50617286", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, headers: { ...response.headers(), etag: `"${"f".repeat(64)}"` } });
+  });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await page.getByRole("button", { name: "删除录制：入口标定", exact: true }).click();
+  await expect(page.getByTestId("delete-session")).toBeDisabled();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  expect(await fixtureRequestCount(request, "/api/v4/sessions/delete")).toBe(0);
+});
+
+test("删除等待期间焦点留在确认框，失败后保留录制并允许取消", async ({ page, request }) => {
+  await request.post("/__fixture/config", { data: { sessionDeletion: true } });
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/v4/sessions/delete", async (route) => {
+    await pending;
+    await route.fulfill({ status: 409, json: {
+      schema: "ylx.api-error.v2",
+      error: { code: "continuation_required", message: "请同时选择后续连续录制" },
+    } });
+  });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await page.getByRole("button", { name: "删除录制：入口标定", exact: true }).click();
+  const dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "确认删除", exact: true }).click();
+  await expect(dialog).toHaveAttribute("aria-busy", "true");
+  await page.keyboard.press("Tab");
+  await expect(dialog).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  release();
+  await expect(dialog.getByRole("alert")).toHaveText("请同时选择后续连续录制");
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "返回会话台账", exact: true }).click();
+  await expect(page.getByTestId("session-item").filter({ hasText: "入口标定" })).toBeVisible();
+});
+
+test("手机小屏和横屏的录制及删除操作保持可见且无溢出", async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== "手机", "移动端布局检查");
+  await request.post("/__fixture/config", { data: { sessionDeletion: true } });
+  for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 640 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const shutter = page.getByRole("button", { name: "开始录制", exact: true });
+    await expect(shutter).toBeEnabled();
+    await expect(shutter).toBeInViewport();
+    await expect(page.getByLabel("录制名称（可选）")).toBeInViewport();
+    const bounds = await shutter.boundingBox();
+    expect(bounds?.width).toBeGreaterThanOrEqual(viewport.height > 520 ? 82 : 64);
+    await expectNoHorizontalOverflow(page, `${viewport.width}×${viewport.height} capture`);
+    await openPanel(page, "会话台账");
+    await page.getByRole("button", { name: "删除录制：入口标定", exact: true }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "确认删除", exact: true })).toBeInViewport();
+    await expect(dialog.getByRole("button", { name: "取消", exact: true })).toBeInViewport();
+    await expectNoHorizontalOverflow(page, `${viewport.width}×${viewport.height} delete`);
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  }
+});
+
 test("D-049 冻结中断结果只显示未成功且不恢复", async ({ page, request }) => {
   await request.post("/__fixture/frozen-interrupted-outcome");
 

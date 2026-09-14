@@ -2083,6 +2083,11 @@ const server = createServer(async (request, response) => {
       });
       return;
     }
+    const digest = summary.verification?.manifest_sha256;
+    if (digest) {
+      response.setHeader("ETag", `"${digest}"`);
+      response.setHeader("YLX-Manifest-SHA256", digest);
+    }
     sendJson(response, 200, makeSessionDetail(summary));
     return;
   }

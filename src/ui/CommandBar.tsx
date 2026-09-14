@@ -3,7 +3,7 @@ import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./format";
-import { CalibrationIcon } from "./icons";
+import { CalibrationIcon, CloseIcon, EditIcon, SessionsIcon } from "./icons";
 
 const CALIBRATION_DISABLED_REASON_LABELS: Record<CalibrationCaptureDisabledReason, string> = {
   capture_source_unsupported: "分眼录制链路不可用",
@@ -65,6 +65,7 @@ function useDisplayedElapsedSeconds(
 export function CommandBar({ state }: { state: AppState }) {
   const [displayName, setDisplayName] = useState("");
   const [mode, setMode] = useState<"record" | "calibration">("record");
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const snapshot = state.capture?.snapshot;
   const deviceState = snapshot?.device_state ?? null;
   const active = snapshot?.active_recording?.recording_state ?? null;
@@ -113,7 +114,7 @@ export function CommandBar({ state }: { state: AppState }) {
         : "开始录制";
 
   return (
-    <footer class="bottombar">
+    <footer class="bottombar" data-active={String(Boolean(active))}>
       <form
         class="command-form"
         onSubmit={(event) => {
@@ -131,6 +132,18 @@ export function CommandBar({ state }: { state: AppState }) {
           }
         }}
       >
+        <button
+          type="button"
+          class="capture-shortcut capture-library"
+          aria-label="打开录制列表"
+          onClick={() => {
+            store.dispatch({ type: "panel.opened", panel: "sessions" });
+            void store.refreshSessions();
+          }}
+        >
+          <SessionsIcon size={24} />
+          <span>录制列表</span>
+        </button>
         <div class="shutter-stack">
           <div class="mode-seg" role="group" aria-label="录制模式">
             <button
@@ -167,7 +180,21 @@ export function CommandBar({ state }: { state: AppState }) {
           >
             <span class="shutter-dot" aria-hidden="true" />
           </button>
+          <span class="shutter-caption" aria-hidden="true">{shutterLabel}</span>
         </div>
+        <button
+          type="button"
+          class="capture-shortcut capture-name-shortcut"
+          aria-label="命名"
+          disabled={Boolean(active) || !connected || !cameraConnected || state.commandPending || deviceState !== "idle"}
+          onClick={() => {
+            nameInputRef.current?.focus();
+            nameInputRef.current?.select();
+          }}
+        >
+          <EditIcon size={24} />
+          <span>命名</span>
+        </button>
 
         <div class="command-body">
         {active ? (
@@ -183,19 +210,45 @@ export function CommandBar({ state }: { state: AppState }) {
             <label class="eyebrow" for="capture-name">
               录制名称（可选）
             </label>
-            <input
-              id="capture-name"
-              class="name-input"
-              type="text"
-              maxLength={160}
-              autocomplete="off"
-              placeholder="例如：走廊采集 01"
-              value={displayName}
-              disabled={
-                !connected || !cameraConnected || state.commandPending || deviceState !== "idle"
-              }
-              onInput={(event) => setDisplayName((event.currentTarget as HTMLInputElement).value)}
-            />
+            <div class="name-field">
+              <input
+                ref={nameInputRef}
+                id="capture-name"
+                class="name-input"
+                type="text"
+                maxLength={160}
+                autocomplete="off"
+                enterKeyHint="done"
+                aria-describedby="capture-name-hint"
+                placeholder="留空按时间命名"
+                value={displayName}
+                disabled={
+                  !connected || !cameraConnected || state.commandPending || deviceState !== "idle"
+                }
+                onInput={(event) => setDisplayName((event.currentTarget as HTMLInputElement).value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.isComposing) {
+                    event.preventDefault();
+                    nameInputRef.current?.blur();
+                  }
+                }}
+              />
+              {displayName ? (
+                <button
+                  type="button"
+                  class="clear-name"
+                  aria-label="清空名称"
+                  disabled={!connected || !cameraConnected || state.commandPending || deviceState !== "idle"}
+                  onClick={() => {
+                    setDisplayName("");
+                    nameInputRef.current?.focus();
+                  }}
+                >
+                  <CloseIcon size={18} />
+                </button>
+              ) : null}
+            </div>
+            <p id="capture-name-hint" class="name-hint">{displayName ? "名称已就绪，点击快门开始录制" : "可直接开始，设备会用录制时间命名"}</p>
             {!connected ? (
               <p class="command-lock">
                 {state.connection === "connecting"

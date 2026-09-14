@@ -178,7 +178,10 @@ function SessionReplay({
   );
 }
 
-export function SessionDetail({ state }: { state: AppState }) {
+export function SessionDetail({ state, requestDelete = false }: {
+  state: AppState;
+  requestDelete?: boolean;
+}) {
   const selected = state.selected;
   if (!selected) {
     return null;
@@ -191,7 +194,23 @@ export function SessionDetail({ state }: { state: AppState }) {
   const [deleteError, setDeleteError] = useState<VisibleError | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  const deleteDialogRef = useRef<HTMLDivElement>(null);
   const deleteConfirmationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const requestedOnce = useRef(false);
+
+  useEffect(() => {
+    if (requestDelete && selected.detail && !requestedOnce.current) {
+      requestedOnce.current = true;
+      const digest = selected.manifestSha256;
+      if (
+        state.device?.capabilities.session_deletion &&
+        selected.detail.sealed && digest && /^[0-9a-f]{64}$/.test(digest)
+      ) {
+        deleteConfirmationTriggerRef.current = deleteTriggerRef.current;
+        setDeleteConfirmation(true);
+      }
+    }
+  }, [requestDelete, selected.detail, selected.manifestSha256]);
 
   useEffect(() => {
     if (!deleteConfirmation) {
@@ -281,7 +300,7 @@ export function SessionDetail({ state }: { state: AppState }) {
   // 门禁：只有消费方独立判为 usable 且设备声明 range_download 时才出现下载入口。
   const downloadable = verdict === "usable" && state.device?.capabilities.range_download === true;
   const deletionSupported = state.device?.capabilities.session_deletion === true;
-  const manifestSha256 = summary?.verification?.manifest_sha256 ?? null;
+  const manifestSha256 = selected.manifestSha256 ?? null;
   const hasManifestDigest =
     typeof manifestSha256 === "string" && /^[0-9a-f]{64}$/i.test(manifestSha256);
   const deletionReady = deletionSupported && detail.sealed && hasManifestDigest && !deletePending;
@@ -291,6 +310,7 @@ export function SessionDetail({ state }: { state: AppState }) {
       return;
     }
     setDeletePending(true);
+    deleteDialogRef.current?.focus();
     setDeleteError(null);
     try {
       const result = await store.deleteSession(detail.session_id, manifestSha256);
@@ -467,45 +487,45 @@ export function SessionDetail({ state }: { state: AppState }) {
           detail={detail}
           enabled={state.device?.capabilities.range_download === true}
         />
+      </div>
+      <section class="detail-section session-delete" aria-label="录制操作">
+        {deleteError && !deleteConfirmation ? (
+          <div class="alert" role="alert">
+            <code>{deleteError.code}</code>
+            <span>{deleteError.message}</span>
+          </div>
+        ) : null}
+        <button
+          ref={deleteTriggerRef}
+          type="button"
+          class="panel-danger"
+          data-testid="delete-session"
+          disabled={!deletionReady}
+          aria-disabled={!deletionReady}
+          onClick={() => {
+            if (deletionReady) {
+              deleteConfirmationTriggerRef.current = deleteTriggerRef.current;
+              setDeleteError(null);
+              setDeleteConfirmation(true);
+            }
+          }}
+        >
+          {deletePending ? "正在删除" : "删除此会话"}
+        </button>
+        {!deletionSupported ? (
+          <p class="panel-note">当前固件未声明远程删除能力。</p>
+        ) : !hasManifestDigest ? (
+          <p class="panel-note">该会话尚未完成网关校验，暂不能安全删除。</p>
+        ) : null}
 
-        <section class="detail-section session-delete">
-          <span class="eyebrow">DELETE</span>
-          <p class="panel-note">
-            删除会永久移除设备上的这个会话及其全部制品；已经下载到本地的文件不受影响。
-          </p>
-          {deleteError ? (
-            <div class="alert" role="alert">
-              <code>{deleteError.code}</code>
-              <span>{deleteError.message}</span>
-            </div>
-          ) : null}
-          <button
-            ref={deleteTriggerRef}
-            type="button"
-            class="panel-danger"
-            data-testid="delete-session"
-            disabled={!deletionReady}
-            aria-disabled={!deletionReady}
-            onClick={() => {
-              if (deletionReady) {
-                deleteConfirmationTriggerRef.current = deleteTriggerRef.current;
-                setDeleteError(null);
-                setDeleteConfirmation(true);
-              }
-            }}
-          >
-            {deletePending ? "正在删除" : "删除此会话"}
-          </button>
-          {!deletionSupported ? (
-            <p class="panel-note">当前固件未声明远程删除能力。</p>
-          ) : !hasManifestDigest ? (
-            <p class="panel-note">该会话尚未完成网关校验，暂不能安全删除。</p>
-          ) : null}
-
-          {deleteConfirmation ? (
+        {deleteConfirmation ? (
+          <div class="delete-backdrop">
             <div
+              ref={deleteDialogRef}
               class="network-confirm danger session-delete-confirm"
               role="alertdialog"
+              tabIndex={-1}
+              aria-modal="true"
               aria-labelledby="session-delete-title"
               aria-describedby="session-delete-description"
               aria-busy={deletePending}
@@ -514,12 +534,27 @@ export function SessionDetail({ state }: { state: AppState }) {
                   event.preventDefault();
                   setDeleteConfirmation(false);
                 }
+                if (event.key === "Tab") {
+                  const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+                  const first = buttons[0];
+                  const last = buttons[buttons.length - 1];
+                  if (!first) {
+                    event.preventDefault();
+                  } else if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) {
+                    event.preventDefault();
+                    last?.focus();
+                  } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first?.focus();
+                  }
+                }
               }}
             >
               <strong id="session-delete-title">永久删除“{detail.display_name}”？</strong>
               <p id="session-delete-description">
-                设备上的视频、音频、帧索引和 IMU 文件都会被删除，操作不可撤销。
+                将删除设备上这次录制的全部文件，无法撤销。已下载的本地文件不受影响。
               </p>
+              {deleteError ? <p role="alert">{deleteError.message}</p> : null}
               <div class="network-confirm-actions">
                 <button
                   type="button"
@@ -540,9 +575,9 @@ export function SessionDetail({ state }: { state: AppState }) {
                 </button>
               </div>
             </div>
-          ) : null}
-        </section>
-      </div>
+          </div>
+        ) : null}
+      </section>
     </aside>
   );
 }
