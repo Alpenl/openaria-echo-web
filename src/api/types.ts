@@ -187,7 +187,8 @@ export interface SessionVerificationDiagnostic {
     | "artifact_digest_mismatch"
     | "artifact_invalid"
     | "manifest_invalid"
-    | "verification_failed";
+    | "verification_failed"
+    | "recording_interrupted";
   summary: string;
 }
 
