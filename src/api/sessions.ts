@@ -62,6 +62,7 @@ const VERIFICATION_CODES = new Set([
   "artifact_invalid",
   "manifest_invalid",
   "verification_failed",
+  "recording_interrupted",
 ]);
 
 function hasExactKeys(value: unknown, keys: ReadonlySet<string>): value is Record<string, unknown> {

@@ -1910,6 +1910,35 @@ test("两个浏览器最终收敛到同一录制状态", async ({ browser }) => 
   await context.close();
 });
 
+test("中断录制保留完整前段并在列表标明可用", async ({ page, request }) => {
+  await request.post("/__fixture/fail-capture");
+  await page.route(/\/api\/v4\/sessions(?:\?.*)?$/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.schema = "ylx.session-list.v3";
+    body.catalog_revision = `sha256:${"c".repeat(64)}`;
+    const saved = structuredClone(body.items[0]);
+    saved.session_id = "0198a100-0006-7006-8000-000000000006";
+    saved.display_name = "中断后的完整前段";
+    saved.duration_seconds = 300;
+    saved.verification.diagnostics = [{
+      code: "recording_interrupted",
+      summary: "录制已中断，完整前段已保存，可正常导出",
+    }];
+    body.items.unshift(saved);
+    await route.fulfill({ response, json: body });
+  });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await expect(page.getByTestId("retained-outcome")).toHaveText("部分已保存");
+  await expect(page.getByText("录制已中断，已保存前 300.0 秒，可导出")).toBeVisible();
+  const saved = page.getByTestId("session-item").filter({ hasText: "中断后的完整前段" });
+  await expect(saved).toHaveAttribute("data-verdict", "usable");
+  await expect(saved).toContainText("录制中断 · 完整前段已保存");
+  await page.getByRole("button", { name: "未成功", exact: true }).click();
+  await expect(saved).toBeVisible();
+});
+
 test("未成功终态保留诊断且不伪装成封存会话", async ({ page, request }) => {
   await page.goto("/");
   await fillCaptureName(page, "失败录制");

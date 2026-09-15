@@ -19,11 +19,17 @@ function verdictOf(session: SessionSummary): "usable" | "unusable" | "unknown" {
   return session.verification?.verdict ?? "unknown";
 }
 
-function matches(session: SessionSummary, query: string, filter: SessionFilter): boolean {
+function wasInterrupted(session: SessionSummary, savedSessionId?: string): boolean {
+  return session.session_id === savedSessionId || (session.verification?.diagnostics.some((diagnostic) =>
+    typeof diagnostic !== "string" && diagnostic.code === "recording_interrupted"
+  ) ?? false);
+}
+
+function matches(session: SessionSummary, query: string, filter: SessionFilter, savedSessionId?: string): boolean {
   if (filter === "usable" && verdictOf(session) !== "usable") {
     return false;
   }
-  if (filter === "unsuccessful" && session.producer_outcome === "sealed") {
+  if (filter === "unsuccessful" && session.producer_outcome === "sealed" && !wasInterrupted(session, savedSessionId)) {
     return false;
   }
   if (!query) {
@@ -49,7 +55,10 @@ export function SessionsPanel({ state }: { state: AppState }) {
   }
 
   const { items, query, filter, loading, loadedOnce, nextCursor, diagnostics } = state.sessions;
-  const visible = items.filter((session) => matches(session, query, filter));
+  const retained = state.capture?.snapshot.retained_unsuccessful?.recording_state;
+  const savedSessionId = retained?.diagnostics.some((diagnostic) => diagnostic.code === "recording_prefix_saved")
+    ? retained.session_id : undefined;
+  const visible = items.filter((session) => matches(session, query, filter, savedSessionId));
 
   return (
     <aside class="panel" aria-label="会话台账">
@@ -135,7 +144,8 @@ export function SessionsPanel({ state }: { state: AppState }) {
                 <span>{formatSeconds(session.duration_seconds)}</span>
                 <span>{formatGiB(session.total_bytes)}</span>
                 <span class="producer">
-                  {session.producer_outcome === "sealed" ? "已封存" : session.producer_outcome}
+                  {wasInterrupted(session, savedSessionId) ? "录制中断 · 完整前段已保存" :
+                    session.producer_outcome === "sealed" ? "已封存" : session.producer_outcome}
                 </span>
                 <code class="session-uuid">{session.session_id}</code>
               </span>

@@ -1,5 +1,5 @@
 import type { AppState } from "../state/reducer";
-import { OUTCOME_LABELS } from "./format";
+import { formatSeconds, OUTCOME_LABELS } from "./format";
 
 /**
  * 危险带投影权威快照里的持久状态，不是事件流：它永远不用 role="alert"，
@@ -11,12 +11,21 @@ export function HazardBand({ state }: { state: AppState }) {
     return null;
   }
   const outcome = retained.recording_state.state;
+  const recovery = retained.recording_state.diagnostics.find(
+    (diagnostic) => diagnostic.code === "recording_prefix_saved"
+  );
+  const saved = state.sessions.items.find((session) =>
+    session.session_id === retained.recording_state.session_id &&
+    session.verification?.verdict === "usable"
+  );
   return (
     <section class="hazard" role="status" aria-label="设备危险状态">
       <span class="hazard-mark" aria-hidden="true" />
-      <p>上一次录制没有成功封存</p>
+      <p>{recovery?.message ?? (saved
+        ? `录制已中断，已保存前 ${formatSeconds(saved.duration_seconds)}，可导出`
+        : "上一次录制没有成功封存")}</p>
       <strong class="hazard-outcome" data-testid="retained-outcome">
-        {OUTCOME_LABELS[outcome] ?? outcome}
+        {saved || recovery ? "部分已保存" : OUTCOME_LABELS[outcome] ?? outcome}
       </strong>
       <code class="hazard-session" data-testid="retained-session">
         {retained.recording_state.session_id}
