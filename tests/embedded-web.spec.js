@@ -1268,6 +1268,51 @@ test("事件流 401 停止重连并回到令牌入口", async ({ page, request }
   expect(laterCount).toBe(unauthorizedCount);
 });
 
+test("预览先解码再显示且不会撤销仍在显示的帧", async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = { visibleRevoked: 0, undecodedDisplayed: 0, frames: 0, live: new Set(), peak: 0 };
+    Object.defineProperty(window, "__previewLifetime", { value: metrics });
+    const decoded = new Set();
+    const originalDecode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = async function () {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await originalDecode.call(this);
+      decoded.add(this.src);
+    };
+    const create = URL.createObjectURL;
+    URL.createObjectURL = function (blob) {
+      const url = create.call(URL, blob);
+      metrics.live.add(url);
+      metrics.peak = Math.max(metrics.peak, metrics.live.size);
+      return url;
+    };
+    const revoke = URL.revokeObjectURL;
+    URL.revokeObjectURL = function (url) {
+      const displayed = document.querySelector('[data-testid="preview-image"]');
+      if (displayed && !displayed.hidden && displayed.getAttribute("src") === url) metrics.visibleRevoked++;
+      metrics.live.delete(url);
+      revoke.call(URL, url);
+    };
+    new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        const element = mutation.target;
+        if (element instanceof HTMLImageElement && element.dataset.testid === "preview-image" && element.src.startsWith("blob:")) {
+          metrics.frames++;
+          if (!decoded.has(element.src)) metrics.undecodedDisplayed++;
+        }
+      }
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["src"] });
+  });
+  await routeFocusPeakingPreview(page, { limit: 8 });
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(6);
+  const metrics = await page.evaluate(() => ({ ...window.__previewLifetime, live: window.__previewLifetime.live.size }));
+  expect(metrics.visibleRevoked).toBe(0);
+  expect(metrics.undecodedDisplayed).toBe(0);
+  expect(metrics.peak).toBeLessThanOrEqual(3);
+  expect(metrics.live).toBeLessThanOrEqual(2);
+});
+
 test("慢预览响应不排队且录制期间继续更新左眼画面", async ({ page, request }) => {
   let previewInFlight = 0;
   let previewMaxInFlight = 0;

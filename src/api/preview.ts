@@ -8,30 +8,62 @@ export interface FollowLatestPreviewOptions {
   onState: (state: PreviewState) => void;
 }
 
+// Preview and focus peaking share the same decoded image. The two-entry cache
+// holds only the displayed and incoming frame, never a history of full images.
+const decodedFrames = new Map<string, Promise<HTMLImageElement>>();
+export function decodePreviewFrame(url: string): Promise<HTMLImageElement> {
+  const existing = decodedFrames.get(url);
+  if (existing) return existing;
+  const image = new Image();
+  image.decoding = "async";
+  image.src = url;
+  const decoded = image.decode().then(() => image);
+  decodedFrames.set(url, decoded);
+  while (decodedFrames.size > 2) decodedFrames.delete(decodedFrames.keys().next().value!);
+  return decoded;
+}
+
 /**
- * 单槽覆盖：任何时刻只保留最新一帧的 object URL，旧帧立刻回收。
- * 慢客户端丢弃旧帧，永远不向采集路径施加背压，也不累积陈旧画面。
+ * Fetch and decode one frame at a time. Keep the displayed URL alive until a
+ * decoded replacement has been committed and the browser has painted it.
  */
 export async function followLatestPreview(options: FollowLatestPreviewOptions): Promise<void> {
   let currentUrl: string | null = null;
+  let retiredUrl: string | null = null;
   const clearFrame = () => {
+    if (retiredUrl) {
+      URL.revokeObjectURL(retiredUrl);
+      retiredUrl = null;
+    }
     if (currentUrl) {
       URL.revokeObjectURL(currentUrl);
       currentUrl = null;
     }
     options.onFrame(null);
+    decodedFrames.clear();
   };
   try {
     while (!options.signal.aborted) {
       try {
         const blob = await getLatestPreview(options.signal);
         const nextUrl = URL.createObjectURL(blob);
+        try {
+          await decodePreviewFrame(nextUrl);
+          if (options.signal.aborted) {
+            URL.revokeObjectURL(nextUrl);
+            return;
+          }
+        } catch (error) {
+          URL.revokeObjectURL(nextUrl);
+          throw error;
+        }
+        // Preact commits state asynchronously. Revoking currentUrl here can
+        // invalidate the still-visible <img>, particularly on mobile WebKit.
+        if (retiredUrl) URL.revokeObjectURL(retiredUrl);
+        retiredUrl = currentUrl;
+        currentUrl = nextUrl;
         options.onFrame(nextUrl);
         options.onState("live");
-        if (currentUrl) {
-          URL.revokeObjectURL(currentUrl);
-        }
-        currentUrl = nextUrl;
         await waitForAbortableDelay(40, options.signal);
       } catch (error) {
         if (options.signal.aborted) {
