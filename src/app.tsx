@@ -12,6 +12,7 @@ import { NetworkPanel } from "./ui/NetworkPanel";
 import { SessionsPanel } from "./ui/SessionsPanel";
 import { Stage, StageOverlays } from "./ui/Stage";
 import { TopBar } from "./ui/TopBar";
+import { FirmwarePanel } from "./ui/FirmwarePanel";
 
 const CAPTURE_RECONCILE_INTERVAL_MS = 500;
 const PANEL_RECONCILE_INTERVAL_MS = 5000;
@@ -25,6 +26,7 @@ function initialInspect(): "both" | "left" {
 }
 
 export function App() {
+  const [firmwareOpen, setFirmwareOpen] = useState(false);
   const state = useEchoState();
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<PreviewState>("waiting");
@@ -151,7 +153,10 @@ export function App() {
   return (
     <div class="echo">
       <Stage state={state} frameUrl={frameUrl} previewState={previewState} />
-      <TopBar state={state} />
+      <TopBar state={state} onVersion={() => {
+        store.dispatch({ type: "panel.closed" });
+        setFirmwareOpen((open) => !open);
+      }} />
       <div class="stage-mid">
         <HazardBand state={state} />
         <Alerts state={state} />
@@ -161,6 +166,7 @@ export function App() {
       {state.panel === "sessions" ? <SessionsPanel state={state} /> : null}
       {state.panel === "device" ? <DevicePanel state={state} /> : null}
       {state.panel === "network" ? <NetworkPanel state={state} /> : null}
+      {firmwareOpen && state.panel === "none" ? <FirmwarePanel state={state} onClose={() => setFirmwareOpen(false)} /> : null}
       {state.needsCredentials ? (
         <CredentialPrompt
           onConnected={() => {

@@ -2825,3 +2825,20 @@ a:hover {
     border-radius: 0;
   }
 }
+/* Firmware status is readable at the same entry point on desktop and mobile. */
+.version-badge {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.firmware-panel { z-index: 50; }
+.firmware-panel .panel-head { justify-content: space-between; }
+.firmware-version { display: block; font-size: 28px; margin-block: 12px; }
+.firmware-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+.firmware-error { color: #ffb4a2; overflow-wrap: anywhere; }
