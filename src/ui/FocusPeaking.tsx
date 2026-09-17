@@ -3,24 +3,8 @@ import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { decodePreviewFrame } from "../api/preview";
 
-const PEAK_COLOR = [232, 88, 255, 230] as const;
-const PEAKING_PIXEL_BUDGET = 512 * 1024;
-
-export function fitPeakingDimensions(
-  sourceWidth: number,
-  sourceHeight: number,
-): { width: number; height: number } {
-  const width = Math.max(0, Math.floor(sourceWidth));
-  const height = Math.max(0, Math.floor(sourceHeight));
-  if (width * height <= PEAKING_PIXEL_BUDGET) {
-    return { width, height };
-  }
-  const scale = Math.sqrt(PEAKING_PIXEL_BUDGET / (width * height));
-  return {
-    width: Math.max(1, Math.floor(width * scale)),
-    height: Math.max(1, Math.floor(height * scale)),
-  };
-}
+import PeakingWorker from "./peaking.worker?worker&inline";
+import { fitPeakingDimensions, peakingPixels } from "./peaking";
 
 function clearCanvas(canvas: HTMLCanvasElement | null): void {
   if (!canvas) {
@@ -51,35 +35,9 @@ function renderPeakingMask(
   context.clearRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
   const source = context.getImageData(0, 0, width, height);
-  const output = context.createImageData(width, height);
-  const luminance = new Uint8Array(width * height);
-
-  for (let index = 0, pixel = 0; index < source.data.length; index += 4, pixel += 1) {
-    luminance[pixel] =
-      (source.data[index] ?? 0) * 0.299 +
-      (source.data[index + 1] ?? 0) * 0.587 +
-      (source.data[index + 2] ?? 0) * 0.114;
-  }
-
-  let highlighted = 0;
-  for (let y = 1; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 1; x += 1) {
-      const pixel = y * width + x;
-      const horizontal = Math.abs((luminance[pixel - 1] ?? 0) - (luminance[pixel + 1] ?? 0));
-      const vertical = Math.abs((luminance[pixel - width] ?? 0) - (luminance[pixel + width] ?? 0));
-      if (Math.max(horizontal, vertical) > threshold) {
-        const outputIndex = pixel * 4;
-        output.data[outputIndex] = PEAK_COLOR[0];
-        output.data[outputIndex + 1] = PEAK_COLOR[1];
-        output.data[outputIndex + 2] = PEAK_COLOR[2];
-        output.data[outputIndex + 3] = PEAK_COLOR[3];
-        highlighted += 1;
-      }
-    }
-  }
-
-  context.putImageData(output, 0, 0);
-  return highlighted;
+  source.data.set(peakingPixels(source.data, width, height, threshold));
+  context.putImageData(source, 0, 0);
+  return 0;
 }
 
 export function FocusPeakingOverlay({
@@ -91,6 +49,52 @@ export function FocusPeakingOverlay({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const busyRef = useRef(false);
+  const workerRef = useRef<Worker | null>(null);
+  const fallbackTimeRef = useRef(0);
+  const workerDisabledRef = useRef(false);
+  const mountedRef = useRef(true);
+  const cancelWorkerRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    generationRef.current += 1;
+    enabledRef.current = false;
+    cancelWorkerRef.current?.();
+    workerRef.current?.terminate();
+    workerRef.current = null;
+  }, []);
+
+  async function renderInWorker(image: HTMLImageElement, threshold: number): Promise<ImageBitmap | null> {
+    if (workerDisabledRef.current || typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") return null;
+    const bitmap = await createImageBitmap(image);
+    if (!mountedRef.current) { bitmap.close(); return null; }
+    try {
+      workerRef.current ??= new PeakingWorker();
+    } catch {
+      bitmap.close();
+      workerDisabledRef.current = true;
+      return null;
+    }
+    const worker = workerRef.current;
+    return new Promise((resolve) => {
+      const failed = () => {
+        workerDisabledRef.current = true;
+        worker.terminate();
+        workerRef.current = null;
+        cancelWorkerRef.current = null;
+        resolve(null);
+      };
+      cancelWorkerRef.current = failed;
+      worker.onerror = failed;
+      worker.onmessage = (event: MessageEvent<{ mask?: ImageBitmap; error?: boolean }>) => {
+        cancelWorkerRef.current = null;
+        if (event.data.error) failed();
+        else resolve(event.data.mask ?? null);
+      };
+      try { worker.postMessage({ image: bitmap, threshold }, [bitmap]); }
+      catch { bitmap.close(); failed(); }
+    });
+  }
   const enabledRef = useRef(state.focusPeaking.enabled);
   const generationRef = useRef(0);
   const latestUrlRef = useRef<string | null>(null);
@@ -135,8 +139,7 @@ export function FocusPeakingOverlay({
   }, [frameUrl, state.focusPeaking.enabled, state.focusPeaking.threshold]);
 
   function queueFrame(url: string): void {
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
+    const generation = generationRef.current;
     enabledRef.current = true;
     latestUrlRef.current = url;
     if (!busyRef.current) {
@@ -159,9 +162,22 @@ export function FocusPeakingOverlay({
           if (!enabledRef.current || generation !== generationRef.current) {
             return;
           }
-          if (canvasRef.current) {
-            renderPeakingMask(canvasRef.current, image, thresholdRef.current);
-          }
+          const mask = await renderInWorker(image, thresholdRef.current);
+          try {
+            const canvas = canvasRef.current;
+            if (!canvas || !enabledRef.current || generation !== generationRef.current) return;
+            if (mask) {
+              canvas.width = mask.width;
+              canvas.height = mask.height;
+              canvas.getContext("2d")?.drawImage(mask, 0, 0);
+              canvas.dataset.renderer = "worker";
+            } else if (performance.now() - fallbackTimeRef.current >= 100) {
+              // Older browsers keep a bounded 10 Hz overlay; preview keeps its own cadence.
+              fallbackTimeRef.current = performance.now();
+              renderPeakingMask(canvas, image, thresholdRef.current);
+              canvas.dataset.renderer = "fallback";
+            }
+          } finally { mask?.close(); }
         } catch {
           if (generation === generationRef.current) {
             clearCanvas(canvasRef.current);

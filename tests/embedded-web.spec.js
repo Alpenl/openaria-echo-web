@@ -482,6 +482,7 @@ test("峰值对焦默认启用并在预览边缘绘制高亮", async ({ page }) 
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("focus-peaking-canvas")).toBeAttached();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "worker");
 });
 
 test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
@@ -1282,7 +1283,8 @@ test("预览先解码再显示且不会撤销仍在显示的帧", async ({ page 
     const create = URL.createObjectURL;
     URL.createObjectURL = function (blob) {
       const url = create.call(URL, blob);
-      metrics.live.add(url);
+      // The inline focus worker owns a separate JavaScript Blob URL.
+      if (blob.type.startsWith("image/")) metrics.live.add(url);
       metrics.peak = Math.max(metrics.peak, metrics.live.size);
       return url;
     };
@@ -1305,12 +1307,33 @@ test("预览先解码再显示且不会撤销仍在显示的帧", async ({ page 
   });
   await routeFocusPeakingPreview(page, { limit: 8 });
   await page.goto("/");
-  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(6);
+  // Wait for the finite source to drain. During decode, three image URLs are
+  // intentionally alive (displayed, retired, incoming); steady state holds two.
+  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(8);
   const metrics = await page.evaluate(() => ({ ...window.__previewLifetime, live: window.__previewLifetime.live.size }));
   expect(metrics.visibleRevoked).toBe(0);
   expect(metrics.undecodedDisplayed).toBe(0);
   expect(metrics.peak).toBeLessThanOrEqual(3);
   expect(metrics.live).toBeLessThanOrEqual(2);
+});
+
+test("预览把传输解码计入帧周期而不再额外等待 40ms", async ({ page }) => {
+  const metrics = await routeFocusPeakingPreview(page, { delayMs: 30 });
+  await page.goto("/");
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  const initial = metrics.requests;
+  await page.waitForTimeout(1500);
+  // Old cadence is at most 21 requests here even before decode/render costs.
+  expect(metrics.requests - initial).toBeGreaterThan(24);
+  expect(metrics.maxInFlight).toBe(1);
+});
+
+test("不支持 Worker 的浏览器仍提供有界对焦回退", async ({ page }) => {
+  await page.addInitScript(() => { Object.defineProperty(window, "OffscreenCanvas", { value: undefined }); });
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
 });
 
 test("慢预览响应不排队且录制期间继续更新左眼画面", async ({ page, request }) => {

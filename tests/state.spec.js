@@ -16,7 +16,7 @@ import {
 } from "../src/api/network.ts";
 import { initialState, reduceState } from "../src/state/reducer.ts";
 import { EchoStore } from "../src/state/store.ts";
-import { fitPeakingDimensions } from "../src/ui/FocusPeaking.tsx";
+import { fitPeakingDimensions } from "../src/ui/peaking.ts";
 
 const authorityEpoch = "4fa85f64-5717-4562-b3fc-2c963f66afa6";
 const consumerSupportManifest = JSON.parse(

@@ -2161,6 +2161,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, {
       "Cache-Control": "no-store",
       "Content-Type": contentTypes[extname(filePath)] ?? "application/octet-stream",
+      "Content-Security-Policy": "default-src 'self'; base-uri 'none'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data:; object-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'",
     });
     createReadStream(filePath).pipe(response);
   } catch {
