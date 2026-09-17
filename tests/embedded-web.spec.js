@@ -1307,7 +1307,9 @@ test("预览先解码再显示且不会撤销仍在显示的帧", async ({ page 
   });
   await routeFocusPeakingPreview(page, { limit: 8 });
   await page.goto("/");
-  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(6);
+  // Wait for the finite source to drain. During decode, three image URLs are
+  // intentionally alive (displayed, retired, incoming); steady state holds two.
+  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(8);
   const metrics = await page.evaluate(() => ({ ...window.__previewLifetime, live: window.__previewLifetime.live.size }));
   expect(metrics.visibleRevoked).toBe(0);
   expect(metrics.undecodedDisplayed).toBe(0);
