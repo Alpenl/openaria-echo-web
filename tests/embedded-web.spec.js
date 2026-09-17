@@ -1084,13 +1084,8 @@ test("录制命令只在本次请求结束后解锁", async ({ page, request }) 
   await request.post("/__fixture/state", { data: { broadcast: true } });
   await expect(page.getByRole("button", { name: "正在发送" })).toBeDisabled();
 
-  const pendingResponse = await request.get("/__fixture/requests");
-  const pendingRequests = /** @type {{requests: Array<{path: string}>}} */ (
-    await pendingResponse.json()
-  ).requests;
-  expect(
-    pendingRequests.filter((entry) => entry.path === "/api/v4/capture/start"),
-  ).toHaveLength(1);
+  // The pending phase also includes clock initialization before the start POST.
+  await expect.poll(() => fixtureRequestCount(request, "/api/v4/capture/start")).toBe(1);
 
   await expect(page.getByTestId("capture-state")).toHaveText("录制中");
   await expect(page.getByRole("button", { name: "结束录制" })).toBeEnabled();

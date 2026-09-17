@@ -32,8 +32,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "b7b244cc78e923d1582aa3113abc35c1b485503ef3b53c8f818d478a07fb7372",
-      bytes: 128352,
+      sha256: "00e71f5fc5dec89d0fba93af9bea447d92ffc79a90a2735ab8dff5214a561d65",
+      bytes: 132425,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -420,7 +420,79 @@ export interface ListSessionsQuery {
   cursor?: string | null;
 }
 
+type ClockStatus = {
+  schema: "ylx.clock-status.v1";
+  source: "ntp" | "client" | "unsynchronized";
+  unix_time_ms: number;
+  challenge: string | null;
+  expires_in_ms: number;
+  applied: boolean;
+};
+
+function assertClockStatus(value: unknown): ClockStatus {
+  if (
+    !hasExactKeys(value, new Set([
+      "schema", "source", "unix_time_ms", "challenge", "expires_in_ms", "applied",
+    ])) ||
+    value.schema !== "ylx.clock-status.v1" ||
+    !Number.isSafeInteger(value.unix_time_ms) || Number(value.unix_time_ms) < 0 ||
+    typeof value.applied !== "boolean" ||
+    (value.applied && value.source !== "client") ||
+    !(value.source === "unsynchronized"
+      ? typeof value.challenge === "string" && /^[0-9a-f]{32}$/.test(value.challenge) &&
+        value.expires_in_ms === 5000
+      : (value.source === "ntp" || value.source === "client") &&
+        value.challenge === null && value.expires_in_ms === 0)
+  ) {
+    throw new DeviceApiError("设备校时响应无效", 502, "invalid_clock_status");
+  }
+  return value as ClockStatus;
+}
+
+let clockRequest: Promise<ClockStatus | null> | null = null;
+
+async function synchronizeClock(): Promise<ClockStatus | null> {
+  // Join connection/visibility/record-button attempts in this tab.
+  if (clockRequest) return clockRequest;
+  clockRequest = (async () => {
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), 5000);
+    try {
+      const started = performance.now();
+      const raw = await requestOptionalJson<unknown>("/clock", { signal: controller.signal });
+      if (raw === null) return null; // Optional extension: older firmware keeps working.
+      const status = assertClockStatus(raw);
+      if (status.source !== "unsynchronized") return status;
+      if (performance.now() - started > 2000) {
+        throw new DeviceApiError("连接延迟较高，请重试校准日期", 409, "clock_challenge_expired");
+      }
+      const now = Date.now();
+      if (now < 1704067200000 || now >= 4102444800000) {
+        throw new DeviceApiError("请先校准这台手机或电脑的日期", 400, "client_clock_invalid");
+      }
+      const result = assertClockStatus(await requestJson<unknown>("/clock/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          schema: "ylx.clock-sync-request.v1",
+          challenge: status.challenge,
+          unix_time_ms: now,
+        }),
+      }));
+      if (result.source === "unsynchronized") {
+        throw new DeviceApiError("设备日期尚未校准，请重试", 503, "clock_sync_unavailable");
+      }
+      return result;
+    } finally {
+      globalThis.clearTimeout(timeout);
+    }
+  })().finally(() => { clockRequest = null; });
+  return clockRequest;
+}
+
 export const deviceApi = Object.freeze({
+  syncClock: synchronizeClock,
   getDevice: () => requestJson<DeviceDescriptor>("/device").then(assertSupportedDevice),
   getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status").then(assertCaptureStatus),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),
@@ -503,7 +575,9 @@ export const deviceApi = Object.freeze({
   artifactUrl: (sessionId: string, artifactId: string) =>
     `${API_ROOT}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`,
 
-  startCapture: (displayName?: string, mode: "production" | "calibration" = "production") => {
+  startCapture: async (displayName?: string, mode: "production" | "calibration" = "production") => {
+    // Date-derived session IDs and names must be allocated after calibration.
+    await synchronizeClock();
     const normalizedDisplayName = displayName?.trim();
     return requestJson<CaptureStatus>(
       "/capture/start",

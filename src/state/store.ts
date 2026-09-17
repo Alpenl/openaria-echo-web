@@ -123,6 +123,8 @@ export class EchoStore {
   private relatedRefresh: Promise<void> | null = null;
   private sessionsRefresh: Promise<void> | null = null;
   private sessionsRefreshDirty = false;
+  private lastClockAttempt = -Infinity;
+  private lastClockAuthority: string | null = null;
   private readonly stoppedSessionRefreshes = new Map<string, Promise<void>>();
   private readonly sealedSessionRefreshes = new Map<string, Promise<void>>();
 
@@ -169,6 +171,9 @@ export class EchoStore {
       this.dispatch({ type: "capture.snapshot", payload: capture });
       this.dispatch({ type: "error.cleared" });
       this.dispatch({ type: "credentials.cleared" });
+      if (capture.snapshot.device_state === "idle") {
+        await this.synchronizeClock();
+      }
 
       // 会话清单只读取轻量 manifest 元数据；制品完整校验延迟到回放/下载，
       // 避免大卷历史内容阻塞权威状态、SSE 或预览。
@@ -214,11 +219,29 @@ export class EchoStore {
       return;
     }
     const stoppedSessionId = sealedTerminalSessionId(beforeRefresh, this.state.capture);
+    if (this.state.capture?.snapshot.device_state === "idle") {
+      // Monotonic throttling keeps retries working after a browser time correction.
+      const reconnected = this.lastClockAuthority !== this.state.capture.authority_epoch;
+      if (reconnected || performance.now() - this.lastClockAttempt >= 30_000) {
+        void this.synchronizeClock();
+      }
+    }
     if (stoppedSessionId) {
       void this.refreshRelatedResources();
       this.scheduleSealedSessionRefresh(stoppedSessionId);
     }
   };
+
+  private async synchronizeClock(): Promise<void> {
+    this.lastClockAttempt = performance.now();
+    this.lastClockAuthority = this.state.capture?.authority_epoch ?? null;
+    try {
+      await deviceApi.syncClock();
+    } catch (error) {
+      // Keep viewing/control available; the record button retries and surfaces failure.
+      console.warn(error);
+    }
+  }
 
   refreshRelatedResources = async (): Promise<void> => {
     if (!this.relatedRefresh) {

@@ -9,7 +9,7 @@ import {
 } from "./format";
 import { DeviceIcon, SessionsIcon } from "./icons";
 
-export function TopBar({ state }: { state: AppState }) {
+export function TopBar({ state, onVersion }: { state: AppState; onVersion: () => void }) {
   const snapshot = state.capture?.snapshot;
   const deviceState = snapshot?.device_state ?? null;
   const storage = state.device?.storage;
@@ -22,6 +22,9 @@ export function TopBar({ state }: { state: AppState }) {
         <h1 class="visually-hidden">Open Aria Echo</h1>
         <span class="brand-mark" aria-hidden="true" />
         <span class="brand-label">{state.device?.device.device_label ?? "Open Aria Echo"}</span>
+        <button type="button" class="version-badge" aria-label="版本与更新" onClick={onVersion}>
+          {state.device?.build?.package_version ? `v${state.device.build.package_version}` : "版本"}
+        </button>
       </div>
 
       <strong class="state-chip" data-testid="capture-state" data-state={deviceState ?? "unknown"}>
