@@ -381,7 +381,7 @@ export function SessionDetail({ state, requestDelete = false }: {
               <div><dt>IMU 实际交付</dt><dd>{detail.capture_audit.imu.delivered_slots_hz?.toFixed(1) ?? "--"} 样本槽/秒</dd></div>
               <div><dt>相机—IMU 计数器核对</dt><dd>{detail.capture_audit.camera.counter_matched_frames} / {detail.capture_audit.camera.frame_count} 帧</dd></div>
               <div><dt>标称时间轴偏差</dt><dd>{(detail.capture_audit.camera.nominal_timeline_error_seconds * 1000).toFixed(2)} ms</dd></div>
-              <div><dt>存储</dt><dd>视频 H.265 · 日志 Zstandard · 音频 FLAC 无损压缩</dd></div>
+              <div><dt>存储</dt><dd>{detail.schema === "ylx.device-session.v4" ? "日志 Zstandard · 已录音频 FLAC 无损压缩" : "原始日志与音频"}</dd></div>
             </dl>
             <p class="panel-empty">导出使用逐帧真实时间戳。IMU 两个样本槽共用读取时间；计数器匹配不代表已完成 ADC 时间标定或空间标定。</p>
           </section>
