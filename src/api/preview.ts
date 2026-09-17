@@ -45,6 +45,7 @@ export async function followLatestPreview(options: FollowLatestPreviewOptions): 
   try {
     while (!options.signal.aborted) {
       try {
+        const started = performance.now();
         const blob = await getLatestPreview(options.signal);
         const nextUrl = URL.createObjectURL(blob);
         try {
@@ -64,7 +65,7 @@ export async function followLatestPreview(options: FollowLatestPreviewOptions): 
         currentUrl = nextUrl;
         options.onFrame(nextUrl);
         options.onState("live");
-        await waitForAbortableDelay(40, options.signal);
+        await waitForAbortableDelay(Math.max(0, 1000 / 30 - (performance.now() - started)), options.signal);
       } catch (error) {
         if (options.signal.aborted) {
           return;
