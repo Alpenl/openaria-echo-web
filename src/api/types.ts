@@ -264,6 +264,18 @@ export interface SessionArtifact {
 }
 
 export interface SessionDetail {
+  capture_audit?: {
+    schema: "openaria.capture-audit.v1";
+    camera: {
+      actual_fps: number | null;
+      nominal_fps: number;
+      max_interval_ns: number;
+      counter_matched_frames: number;
+      frame_count: number;
+      nominal_timeline_error_seconds: number;
+    };
+    imu: { delivered_slots_hz: number | null; independent_adc_timestamps: boolean };
+  };
   schema: string;
   session_id: string;
   manifest_id: string;
@@ -299,6 +311,7 @@ export interface SessionDetail {
     coordinate_frame?: string;
   };
   video?: {
+    encoding?: { bitrate_kbps: number | null };
     codec: string;
     container: string;
     layout: string;

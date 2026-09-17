@@ -370,6 +370,23 @@ export function SessionDetail({ state, requestDelete = false }: {
           </p>
         </section>
 
+        {detail.capture_audit?.schema === "openaria.capture-audit.v1" ? (
+          <section class="detail-section" aria-label="录制质量与时间戳">
+            <span class="eyebrow">录制质量与时间戳</span>
+            <dl class="facts">
+              <div><dt>编码</dt><dd>{detail.video?.codec === "hevc" ? "H.265 / HEVC" : detail.video?.codec}
+                {detail.video?.encoding?.bitrate_kbps ? ` · 每眼 ${detail.video.encoding.bitrate_kbps / 1024}M` : ""}</dd></div>
+              <div><dt>实际 / 标称帧率</dt><dd>{detail.capture_audit.camera.actual_fps?.toFixed(3) ?? "--"} / {detail.capture_audit.camera.nominal_fps} fps</dd></div>
+              <div><dt>最大帧间隔</dt><dd>{(detail.capture_audit.camera.max_interval_ns / 1e6).toFixed(2)} ms</dd></div>
+              <div><dt>IMU 实际交付</dt><dd>{detail.capture_audit.imu.delivered_slots_hz?.toFixed(1) ?? "--"} 样本槽/秒</dd></div>
+              <div><dt>相机—IMU 计数器核对</dt><dd>{detail.capture_audit.camera.counter_matched_frames} / {detail.capture_audit.camera.frame_count} 帧</dd></div>
+              <div><dt>标称时间轴偏差</dt><dd>{(detail.capture_audit.camera.nominal_timeline_error_seconds * 1000).toFixed(2)} ms</dd></div>
+              <div><dt>存储</dt><dd>视频 H.265 · 日志 Zstandard · 音频 FLAC 无损压缩</dd></div>
+            </dl>
+            <p class="panel-empty">导出使用逐帧真实时间戳。IMU 两个样本槽共用读取时间；计数器匹配不代表已完成 ADC 时间标定或空间标定。</p>
+          </section>
+        ) : null}
+
         <section class="detail-section">
           <span class="eyebrow">IDENTITY</span>
           <dl class="facts">
