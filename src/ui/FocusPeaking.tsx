@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
+import { decodePreviewFrame } from "../api/preview";
 
 const PEAK_COLOR = [232, 88, 255, 230] as const;
 const PEAKING_PIXEL_BUDGET = 512 * 1024;
@@ -27,14 +28,6 @@ function clearCanvas(canvas: HTMLCanvasElement | null): void {
   }
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context?.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-async function decodeFrame(url: string): Promise<HTMLImageElement> {
-  const image = new Image();
-  image.decoding = "async";
-  image.src = url;
-  await image.decode();
-  return image;
 }
 
 function renderPeakingMask(
@@ -162,7 +155,7 @@ export function FocusPeakingOverlay({
         latestUrlRef.current = null;
 
         try {
-          const image = await decodeFrame(url);
+          const image = await decodePreviewFrame(url);
           if (!enabledRef.current || generation !== generationRef.current) {
             return;
           }
