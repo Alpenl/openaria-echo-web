@@ -171,7 +171,9 @@ function SessionReplay({
       ) : null}
       {playbackError ? (
         <p class="panel-note" role="alert">
-          回放制品无法读取；设备会在首次播放时完成校验，请稍后重试或检查会话是否已被替换。
+          {detail.video?.codec === "hevc"
+            ? "H.265 回放需要浏览器和系统支持 HEVC。若此浏览器无法播放，请下载后使用支持 HEVC 的播放器或 Bridge 导出；文件可用性以会话校验结果为准。"
+            : "回放制品无法读取；设备会在首次播放时完成校验，请稍后重试或检查会话是否已被替换。"}
         </p>
       ) : null}
     </section>
