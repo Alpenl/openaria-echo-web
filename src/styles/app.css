@@ -188,6 +188,7 @@ a:hover {
   z-index: 0;
   overflow: hidden;
   background: var(--void);
+  container-type: size;
 }
 
 .preview-tools-toggle,
@@ -239,6 +240,16 @@ a:hover {
 .frame[data-full="true"][data-inspect="left"] canvas,
 .frame[data-full="true"][data-inspect="right"] canvas {
   object-fit: contain;
+  width: min(200cqw, calc(100cqh * var(--preview-aspect, 3.55555556)));
+  height: min(100cqh, calc(200cqw / var(--preview-aspect, 3.55555556)));
+}
+
+.frame[data-full="true"][data-inspect="left"] canvas {
+  clip-path: inset(0 50% 0 0);
+}
+
+.frame[data-full="true"][data-inspect="right"] canvas {
+  clip-path: inset(0 0 0 50%);
 }
 
 .frame-empty {
