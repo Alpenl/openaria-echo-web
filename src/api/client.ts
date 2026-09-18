@@ -493,8 +493,8 @@ async function synchronizeClock(): Promise<ClockStatus | null> {
 
 export const deviceApi = Object.freeze({
   syncClock: synchronizeClock,
-  getDevice: () => requestJson<DeviceDescriptor>("/device").then(assertSupportedDevice),
-  getCaptureStatus: () => requestJson<CaptureStatus>("/capture/status").then(assertCaptureStatus),
+  getDevice: (signal?: AbortSignal) => requestJson<DeviceDescriptor>("/device", { signal }).then(assertSupportedDevice),
+  getCaptureStatus: (signal?: AbortSignal) => requestJson<CaptureStatus>("/capture/status", { signal }).then(assertCaptureStatus),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),
   getNetwork: () => requestOptionalJson<unknown>("/network").then(assertNetworkStatus),
   scanNetworks: () => requestJson<unknown>("/network/scan").then(assertNetworkScan),
