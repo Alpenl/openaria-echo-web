@@ -2853,3 +2853,4 @@ a:hover {
 .firmware-version { display: block; font-size: 28px; margin-block: 12px; }
 .firmware-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
 .firmware-error { color: #ffb4a2; overflow-wrap: anywhere; }
+.firmware-confirm { flex: none; border-top: 1px solid var(--hairline-2); background: var(--panel-bg); }
