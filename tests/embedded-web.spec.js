@@ -1336,6 +1336,22 @@ test("不支持 Worker 的浏览器仍提供有界对焦回退", async ({ page }
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
 });
 
+test("单眼默认显示完整画幅且切换眼位会退出裁切放大", async ({ page }) => {
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  await openPreviewTools(page);
+  await page.getByRole("button", { name: "左眼", exact: true }).click();
+  const frame = page.locator(".frame");
+  await expect(frame).toHaveAttribute("data-full", "true");
+  await expect(page.getByTestId("preview-image")).toHaveCSS("object-fit", "contain");
+  await page.getByRole("button", { name: "全画幅 · 回到铺满", exact: true }).click();
+  await expect(page.getByTestId("preview-image")).toHaveCSS("object-fit", "cover");
+  await page.getByRole("button", { name: "右眼", exact: true }).click();
+  await expect(frame).toHaveAttribute("data-full", "true");
+  await expect(page.getByTestId("preview-image")).toHaveCSS("object-fit", "contain");
+});
+
 test("慢预览响应不排队且录制期间继续更新左眼画面", async ({ page, request }) => {
   let previewInFlight = 0;
   let previewMaxInFlight = 0;

@@ -24,7 +24,7 @@ const PREVIEW_MESSAGES: Record<PreviewState, string> = {
 /**
  * 画面层铺满整个视口，顶栏、底栏和面板都浮在它之上。
  * 并置双目永远用 contain：取景是操作者判断构图的依据，不能替他裁掉视野。
- * 单眼取景默认铺满（裁切），并明确标注可以切回全画幅。
+ * 单眼取景默认保留全画幅，可主动切换为裁切铺满。
  */
 export function Stage({
   state,

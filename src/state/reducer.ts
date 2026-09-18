@@ -151,7 +151,7 @@ export const initialState: AppState = {
   error: null,
   inspect: "both",
   panel: "none",
-  fullFrame: false,
+  fullFrame: true,
   focusPeaking: { enabled: true, threshold: 96 },
 };
 
@@ -394,8 +394,8 @@ export function reduceState(state: AppState, action: Action): AppState {
     case "credentials.cleared":
       return { ...state, needsCredentials: false };
     case "inspect.changed":
-      // 切换取景就回到该模式的默认取法：并置永远全画幅，单眼默认铺满。
-      return { ...state, inspect: action.mode, fullFrame: false };
+      // 每种取景都默认保留完整画幅，避免竖屏单眼裁切放大损失细节。
+      return { ...state, inspect: action.mode, fullFrame: true };
     case "panel.opened":
       return { ...state, panel: action.panel };
     case "panel.closed":
