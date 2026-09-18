@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
-import { decodePreviewFrame } from "../api/preview";
+import { decodePreviewFrame, previewDimensions, type PreviewImage } from "../api/preview";
 
 import PeakingWorker from "./peaking.worker?worker&inline";
 import { fitPeakingDimensions, peakingPixels } from "./peaking";
@@ -16,14 +16,15 @@ function clearCanvas(canvas: HTMLCanvasElement | null): void {
 
 function renderPeakingMask(
   canvas: HTMLCanvasElement,
-  image: HTMLImageElement,
+  image: PreviewImage,
   threshold: number,
 ): number {
-  if (image.naturalWidth < 3 || image.naturalHeight < 3) {
+  const sourceSize = previewDimensions(image);
+  if (sourceSize.width < 3 || sourceSize.height < 3) {
     clearCanvas(canvas);
     return 0;
   }
-  const { width, height } = fitPeakingDimensions(image.naturalWidth, image.naturalHeight);
+  const { width, height } = fitPeakingDimensions(sourceSize.width, sourceSize.height);
 
   canvas.width = width;
   canvas.height = height;
@@ -64,7 +65,7 @@ export function FocusPeakingOverlay({
     workerRef.current = null;
   }, []);
 
-  async function renderInWorker(image: HTMLImageElement, threshold: number): Promise<ImageBitmap | null> {
+  async function renderInWorker(image: PreviewImage, threshold: number): Promise<ImageBitmap | null> {
     if (workerDisabledRef.current || typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") return null;
     const bitmap = await createImageBitmap(image);
     if (!mountedRef.current) { bitmap.close(); return null; }

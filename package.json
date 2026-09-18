@@ -1,6 +1,6 @@
 {
   "name": "openaria-echo-web",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "private": true,
   "type": "module",
   "description": "Open Aria Echo / Web — browser client for Open Aria Conductor",

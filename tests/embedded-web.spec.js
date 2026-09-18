@@ -545,13 +545,14 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   await page.addInitScript(() => {
     const metrics = { decodeActive: 0, maxDecodeActive: 0, rendered: 0 };
     Object.defineProperty(window, "__focusPeakingMetrics", { value: metrics });
-    const originalDecode = HTMLImageElement.prototype.decode;
-    HTMLImageElement.prototype.decode = async function () {
+    const originalDecode = window.createImageBitmap;
+    window.createImageBitmap = async function (source, ...args) {
+      if (!(source instanceof Blob)) return originalDecode(source, ...args);
       metrics.decodeActive += 1;
       metrics.maxDecodeActive = Math.max(metrics.maxDecodeActive, metrics.decodeActive);
       await new Promise((resolve) => setTimeout(resolve, 140));
       try {
-        return await originalDecode.call(this);
+        return await originalDecode(source, ...args);
       } finally {
         metrics.decodeActive -= 1;
       }
@@ -573,7 +574,7 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   await page.waitForTimeout(360);
   const metrics = await page.evaluate(() => /** @type {any} */ (window).__focusPeakingMetrics);
 
-  expect(metrics.maxDecodeActive).toBe(1);
+  expect(metrics.maxDecodeActive).toBe(2);
   expect(metrics.rendered).toBe(renderedAfterIdle);
   expect(metrics.rendered).toBeLessThan(preview.requests);
   expect(preview.maxInFlight).toBe(1);
@@ -1274,15 +1275,19 @@ test("预览先解码再显示且不会撤销仍在显示的帧", async ({ page 
     const metrics = { visibleRevoked: 0, undecodedDisplayed: 0, frames: 0, live: new Set(), peak: 0 };
     Object.defineProperty(window, "__previewLifetime", { value: metrics });
     const decoded = new Set();
-    const originalDecode = HTMLImageElement.prototype.decode;
-    HTMLImageElement.prototype.decode = async function () {
+    const sourceUrls = new WeakMap();
+    const originalDecode = window.createImageBitmap;
+    window.createImageBitmap = async function (source, ...args) {
+      if (!(source instanceof Blob)) return originalDecode(source, ...args);
       await new Promise((resolve) => setTimeout(resolve, 100));
-      await originalDecode.call(this);
-      decoded.add(this.src);
+      const bitmap = await originalDecode(source, ...args);
+      decoded.add(sourceUrls.get(source));
+      return bitmap;
     };
     const create = URL.createObjectURL;
     URL.createObjectURL = function (blob) {
       const url = create.call(URL, blob);
+      sourceUrls.set(blob, url);
       // The inline focus worker owns a separate JavaScript Blob URL.
       if (blob.type.startsWith("image/")) metrics.live.add(url);
       metrics.peak = Math.max(metrics.peak, metrics.live.size);
@@ -1291,30 +1296,114 @@ test("预览先解码再显示且不会撤销仍在显示的帧", async ({ page 
     const revoke = URL.revokeObjectURL;
     URL.revokeObjectURL = function (url) {
       const displayed = document.querySelector('[data-testid="preview-image"]');
-      if (displayed && !displayed.hidden && displayed.getAttribute("src") === url) metrics.visibleRevoked++;
+      if (displayed && !displayed.hidden && displayed.dataset.frameUrl === url) metrics.visibleRevoked++;
       metrics.live.delete(url);
       revoke.call(URL, url);
     };
     new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         const element = mutation.target;
-        if (element instanceof HTMLImageElement && element.dataset.testid === "preview-image" && element.src.startsWith("blob:")) {
+        if (element instanceof HTMLCanvasElement && element.dataset.testid === "preview-image" && element.dataset.frameUrl?.startsWith("blob:")) {
           metrics.frames++;
-          if (!decoded.has(element.src)) metrics.undecodedDisplayed++;
+          if (!decoded.has(element.dataset.frameUrl)) metrics.undecodedDisplayed++;
         }
       }
-    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["src"] });
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-frame-url"] });
   });
   await routeFocusPeakingPreview(page, { limit: 8 });
   await page.goto("/");
-  // Wait for the finite source to drain. During decode, three image URLs are
-  // intentionally alive (displayed, retired, incoming); steady state holds two.
-  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(8);
+  // During decode, four URLs may be alive (displayed, retired, two incoming);
+  // steady state holds two. Multiple results in one paint may be coalesced.
+  await expect.poll(() => page.evaluate(() => window.__previewLifetime.frames)).toBeGreaterThanOrEqual(6);
+  await page.waitForTimeout(300);
   const metrics = await page.evaluate(() => ({ ...window.__previewLifetime, live: window.__previewLifetime.live.size }));
   expect(metrics.visibleRevoked).toBe(0);
   expect(metrics.undecodedDisplayed).toBe(0);
-  expect(metrics.peak).toBeLessThanOrEqual(3);
+  expect(metrics.peak).toBeLessThanOrEqual(4);
   expect(metrics.live).toBeLessThanOrEqual(2);
+});
+
+test("高清并行解码只显示更新帧且不会积压请求", async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = window.__decodeOrder = { active: 0, peak: 0, displayed: [] };
+    const sequence = new Map();
+    const sourceUrls = new WeakMap();
+    const create = URL.createObjectURL;
+    URL.createObjectURL = function (blob) {
+      const url = create.call(URL, blob);
+      sourceUrls.set(blob, url);
+      if (blob.type.startsWith("image/")) sequence.set(url, sequence.size + 1);
+      return url;
+    };
+    const decode = window.createImageBitmap;
+    window.createImageBitmap = async function (source, ...args) {
+      if (!(source instanceof Blob)) return decode(source, ...args);
+      metrics.active++;
+      metrics.peak = Math.max(metrics.peak, metrics.active);
+      try {
+        // The first old frame finishes after multiple newer frames.
+        await new Promise((resolve) => setTimeout(resolve, sequence.get(sourceUrls.get(source)) === 1 ? 250 : 35));
+        return await decode(source, ...args);
+      } finally { metrics.active--; }
+    };
+    new MutationObserver((changes) => {
+      for (const { target } of changes) {
+        if (target instanceof HTMLCanvasElement && target.dataset.testid === "preview-image") {
+          const value = sequence.get(target.dataset.frameUrl);
+          if (value) metrics.displayed.push(value);
+        }
+      }
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-frame-url"] });
+  });
+  const network = await routeFocusPeakingPreview(page, { limit: 12 });
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__decodeOrder.displayed.at(-1))).toBe(12);
+  const metrics = await page.evaluate(() => window.__decodeOrder);
+  expect(metrics.peak).toBe(2);
+  expect(metrics.displayed[0]).toBeGreaterThan(1);
+  expect(metrics.displayed.every((value, index, all) => !index || value > all[index - 1])).toBe(true);
+  expect(network.maxInFlight).toBe(1);
+});
+
+test("位图不可用时预览仍显示原始像素并支持对焦", async ({ page }) => {
+  await page.addInitScript(() => { window.createImageBitmap = undefined; });
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  const image = page.getByTestId("preview-image");
+  await expect(image).toHaveAttribute("width", "32");
+  await expect(image).toHaveAttribute("height", "16");
+  expect(await image.evaluate((canvas) => canvas.getContext("2d").getImageData(0, 0, 32, 16).data.some((value, index) => index % 4 !== 3 && value > 0))).toBe(true);
+});
+
+test("页面中止会释放等待绘制的原生位图", async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = window.__bitmapLifetime = { live: new Set(), peak: 0, holdPaint: false };
+    const create = window.createImageBitmap;
+    window.createImageBitmap = async function (source, ...args) {
+      const image = await create(source, ...args);
+      if (source instanceof Blob) {
+        metrics.live.add(image);
+        metrics.peak = Math.max(metrics.peak, metrics.live.size);
+      }
+      return image;
+    };
+    const close = ImageBitmap.prototype.close;
+    ImageBitmap.prototype.close = function () {
+      metrics.live.delete(this);
+      close.call(this);
+    };
+    const raf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback) => metrics.holdPaint ? 9999999 : raf(callback);
+  });
+  const source = await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect.poll(() => source.requests).toBeGreaterThan(10);
+  await page.evaluate(() => { window.__bitmapLifetime.holdPaint = true; });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { window.dispatchEvent(new Event("pagehide")); });
+  await expect.poll(() => page.evaluate(() => window.__bitmapLifetime.live.size)).toBe(0);
+  expect(await page.evaluate(() => window.__bitmapLifetime.peak)).toBeLessThanOrEqual(4);
 });
 
 test("预览把传输解码计入帧周期而不再额外等待 40ms", async ({ page }) => {
@@ -1334,6 +1423,30 @@ test("不支持 Worker 的浏览器仍提供有界对焦回退", async ({ page }
   await page.goto("/");
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
+});
+
+test("单眼默认显示完整画幅且切换眼位会退出裁切放大", async ({ page }) => {
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  await openPreviewTools(page);
+  await page.getByRole("button", { name: "左眼", exact: true }).click();
+  const frame = page.locator(".frame");
+  await expect(frame).toHaveAttribute("data-full", "true");
+  await expect(page.getByTestId("preview-image")).toHaveCSS("object-fit", "contain");
+  await page.getByRole("button", { name: "全画幅 · 回到铺满", exact: true }).click();
+  await expect(page.getByTestId("preview-image")).toHaveCSS("object-fit", "cover");
+  await page.getByRole("button", { name: "右眼", exact: true }).click();
+  await expect(frame).toHaveAttribute("data-full", "true");
+  await expect(page.getByTestId("preview-image")).toHaveCSS("object-fit", "contain");
+  await page.setViewportSize({ width: 1200, height: 500 });
+  const bounds = await page.getByTestId("preview-image").boundingBox();
+  const viewport = await frame.boundingBox();
+  // The fixture is 32x16 SBS. The selected right eye stays centered and
+  // preserves its full square aspect even in a wide landscape viewport.
+  expect(bounds.width / bounds.height).toBeCloseTo(2, 2);
+  expect(bounds.x + bounds.width * 0.75).toBeCloseTo(viewport.x + viewport.width / 2, 1);
+  await expect(page.getByTestId("preview-image")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
 });
 
 test("慢预览响应不排队且录制期间继续更新左眼画面", async ({ page, request }) => {
@@ -1365,7 +1478,7 @@ test("慢预览响应不排队且录制期间继续更新左眼画面", async ({
     .poll(() =>
       page
         .getByTestId("preview-image")
-        .evaluate((image) => /** @type {HTMLImageElement} */ (image).naturalWidth),
+        .evaluate((image) => /** @type {HTMLCanvasElement} */ (image).width),
     )
     .toBeGreaterThan(0);
 
@@ -1419,7 +1532,8 @@ test("预览循环不会累积中止监听器", async ({ page, request }) => {
   const activeListeners = await page.evaluate(
     () => /** @type {any} */ (window).__rpYlxAbortMetrics.active,
   );
-  expect(activeListeners).toBeLessThanOrEqual(1);
+  // One listener owns pending paint cancellation; one belongs to the current delay.
+  expect(activeListeners).toBeLessThanOrEqual(2);
 });
 
 test("空闲预览不可用不会持续污染浏览器控制台", async ({ page }) => {

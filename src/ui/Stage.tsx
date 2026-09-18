@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useMobileLayout } from "./useMobileLayout";
 import { MobileViewButton } from "./MobileViewButton";
 import type { AppState } from "../state/reducer";
@@ -6,7 +6,7 @@ import { store } from "../state/store";
 import { formatVector, imuSyncLabel } from "./format";
 import { FocusPeakingControl, FocusPeakingOverlay } from "./FocusPeaking";
 import { DeviceIcon, ExpandIcon } from "./icons";
-import type { PreviewState } from "../api/preview";
+import { decodePreviewFrame, previewDimensions, type PreviewState } from "../api/preview";
 
 const INSPECT_MODES = [
   { mode: "both", label: "双目" },
@@ -21,10 +21,38 @@ const PREVIEW_MESSAGES: Record<PreviewState, string> = {
   disconnected: "相机未接入",
 };
 
+function PreviewCanvas({ frameUrl }: { frameUrl: string | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useLayoutEffect(() => {
+    let cancelled = false;
+    const canvas = canvasRef.current;
+    if (canvas && frameUrl) {
+      void decodePreviewFrame(frameUrl).then((image) => {
+        if (cancelled) return;
+        const { width, height } = previewDimensions(image);
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        const aspect = String(width / height);
+        const frame = canvas.parentElement;
+        if (frame?.style.getPropertyValue("--preview-aspect") !== aspect) {
+          frame?.style.setProperty("--preview-aspect", aspect);
+        }
+        canvas.getContext("2d", { alpha: false })?.drawImage(image, 0, 0);
+        canvas.dataset.frameUrl = frameUrl;
+      }).catch(() => {});
+    } else if (canvas) {
+      delete canvas.dataset.frameUrl;
+    }
+    return () => { cancelled = true; };
+  }, [frameUrl]);
+  return <canvas ref={canvasRef} data-testid="preview-image" role="img"
+    aria-label="设备实时预览" hidden={!frameUrl} />;
+}
+
 /**
  * 画面层铺满整个视口，顶栏、底栏和面板都浮在它之上。
  * 并置双目永远用 contain：取景是操作者判断构图的依据，不能替他裁掉视野。
- * 单眼取景默认铺满（裁切），并明确标注可以切回全画幅。
+ * 单眼取景默认保留全画幅，可主动切换为裁切铺满。
  */
 export function Stage({
   state,
@@ -43,12 +71,7 @@ export function Stage({
 
   return (
     <div class="frame" data-inspect={state.inspect} data-full={String(state.fullFrame)}>
-      <img
-        data-testid="preview-image"
-        src={showFrame ? (frameUrl ?? undefined) : undefined}
-        alt="设备实时预览"
-        hidden={!showFrame}
-      />
+      <PreviewCanvas frameUrl={showFrame ? frameUrl : null} />
       <FocusPeakingOverlay state={state} frameUrl={showFrame ? frameUrl : null} />
       {showFrame ? (
         <div class="vf-furniture" aria-hidden="true">
