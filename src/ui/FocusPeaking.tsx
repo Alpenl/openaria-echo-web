@@ -26,8 +26,8 @@ function renderPeakingMask(
   }
   const { width, height } = fitPeakingDimensions(sourceSize.width, sourceSize.height);
 
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
     return 0;
@@ -67,7 +67,22 @@ export function FocusPeakingOverlay({
 
   async function renderInWorker(image: PreviewImage, threshold: number): Promise<ImageBitmap | null> {
     if (workerDisabledRef.current || typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") return null;
-    const bitmap = await createImageBitmap(image);
+    const sourceSize = previewDimensions(image);
+    const { width, height } = fitPeakingDimensions(sourceSize.width, sourceSize.height);
+    if (width < 3 || height < 3) return null;
+    let bitmap: ImageBitmap;
+    try {
+      // Bound the transferred bitmap as well as the worker's pixel processing.
+      bitmap = await createImageBitmap(image, {
+        resizeWidth: width,
+        resizeHeight: height,
+        resizeQuality: "low",
+      });
+    } catch {
+      // Browsers without bitmap resize support retain the canvas fallback.
+      workerDisabledRef.current = true;
+      return null;
+    }
     if (!mountedRef.current) { bitmap.close(); return null; }
     try {
       workerRef.current ??= new PeakingWorker();
@@ -168,9 +183,12 @@ export function FocusPeakingOverlay({
             const canvas = canvasRef.current;
             if (!canvas || !enabledRef.current || generation !== generationRef.current) return;
             if (mask) {
-              canvas.width = mask.width;
-              canvas.height = mask.height;
-              canvas.getContext("2d")?.drawImage(mask, 0, 0);
+              if (canvas.width !== mask.width) canvas.width = mask.width;
+              if (canvas.height !== mask.height) canvas.height = mask.height;
+              const context = canvas.getContext("2d");
+              // Transparent mask pixels must replace the previous frame's edges.
+              context?.clearRect(0, 0, canvas.width, canvas.height);
+              context?.drawImage(mask, 0, 0);
               canvas.dataset.renderer = "worker";
             } else if (performance.now() - fallbackTimeRef.current >= 100) {
               // Older browsers keep a bounded 10 Hz overlay; preview keeps its own cadence.

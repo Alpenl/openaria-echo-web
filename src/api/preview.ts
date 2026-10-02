@@ -136,7 +136,8 @@ export async function followLatestPreview(options: FollowLatestPreviewOptions): 
           if (nextSequence > published) decodeFailure = error;
         }).finally(() => { pending.delete(task); });
         pending.add(task);
-        await waitForAbortableDelay(Math.max(0, 1000 / 30 - (performance.now() - started)), options.signal);
+        // The shared device preview produces at most 25 frames per second.
+        await waitForAbortableDelay(Math.max(0, 1000 / 25 - (performance.now() - started)), options.signal);
       } catch (error) {
         if (options.signal.aborted) {
           return;

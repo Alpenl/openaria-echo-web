@@ -485,6 +485,66 @@ test("峰值对焦默认启用并在预览边缘绘制高亮", async ({ page }) 
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "worker");
 });
 
+test("4K 对焦位图在传输前缩小且连续掩码复用画布并释放位图", async ({ page }) => {
+  const jpeg = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 3840;
+    canvas.height = 1080;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "black";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "white";
+    context.fillRect(960, 270, 1920, 540);
+    return canvas.toDataURL("image/jpeg").split(",")[1];
+  });
+  await page.addInitScript(() => {
+    const metrics = window.__peakingTransfer = { sizes: [], detached: 0, maskCloses: 0, redundantResets: 0 };
+    const localImages = new WeakSet();
+    const create = window.createImageBitmap;
+    window.createImageBitmap = async (...args) => {
+      const image = await create(...args);
+      localImages.add(image);
+      return image;
+    };
+    const close = ImageBitmap.prototype.close;
+    ImageBitmap.prototype.close = function () {
+      if (!localImages.has(this)) metrics.maskCloses++;
+      close.call(this);
+    };
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...args) {
+      const image = message.image;
+      if (image instanceof ImageBitmap) metrics.sizes.push([image.width, image.height]);
+      const result = post.call(this, message, ...args);
+      if (image instanceof ImageBitmap && image.width === 0) metrics.detached++;
+      return result;
+    };
+    for (const dimension of ["width", "height"]) {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, dimension);
+      Object.defineProperty(HTMLCanvasElement.prototype, dimension, {
+        ...descriptor,
+        set(value) {
+          if (this.dataset.testid === "focus-peaking-canvas" && this[dimension] === value) metrics.redundantResets++;
+          descriptor.set.call(this, value);
+        },
+      });
+    }
+  });
+  await page.route("**/api/v4/preview", (route) => route.fulfill({
+    status: 200, contentType: "image/jpeg", body: Buffer.from(jpeg, "base64"),
+  }));
+  await page.goto("/");
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__peakingTransfer.maskCloses)).toBeGreaterThanOrEqual(3);
+  const metrics = await page.evaluate(() => window.__peakingTransfer);
+  expect(metrics.sizes.every(([width, height]) => width * height <= 512 * 1024)).toBe(true);
+  expect(metrics.sizes.every(([width, height]) => width < 3840 && Math.abs(width / height - 3840 / 1080) < 0.01)).toBe(true);
+  expect(metrics.detached).toBe(metrics.sizes.length);
+  expect(metrics.redundantResets).toBe(0);
+  await expect(page.getByTestId("preview-image")).toHaveAttribute("width", "3840");
+  await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "worker");
+});
+
 test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
@@ -1415,6 +1475,42 @@ test("预览把传输解码计入帧周期而不再额外等待 40ms", async ({ 
   // Old cadence is at most 21 requests here even before decode/render costs.
   expect(metrics.requests - initial).toBeGreaterThan(24);
   expect(metrics.maxInFlight).toBe(1);
+});
+
+test("快速预览响应仍遵守设备 25 FPS 的生产预算", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__previewStarts = [];
+    const fetch = window.fetch;
+    window.fetch = function (input, ...args) {
+      if (String(input).endsWith("/api/v4/preview")) window.__previewStarts.push(performance.now());
+      return fetch.call(this, input, ...args);
+    };
+  });
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__previewStarts.length)).toBeGreaterThanOrEqual(26);
+  const starts = await page.evaluate(() => window.__previewStarts.slice(0, 26));
+  // Allow timer rounding, but reject the previous 30 FPS / 33 ms request loop.
+  expect(starts.at(-1) - starts[0]).toBeGreaterThanOrEqual(25 * 38);
+});
+
+test("不支持位图缩放的浏览器使用对焦回退", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__resizeAttempts = 0;
+    const create = window.createImageBitmap;
+    window.createImageBitmap = function (source, ...args) {
+      if (args[0]?.resizeWidth) {
+        window.__resizeAttempts++;
+        return Promise.reject(new TypeError("Bitmap resize unavailable"));
+      }
+      return create(source, ...args);
+    };
+  });
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
+  expect(await page.evaluate(() => window.__resizeAttempts)).toBe(1);
 });
 
 test("不支持 Worker 的浏览器仍提供有界对焦回退", async ({ page }) => {
