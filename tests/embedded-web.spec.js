@@ -472,17 +472,31 @@ test("网页明确显示相机未暴露自动对焦控制", async ({ page, reque
   await expect(page.locator("#focus-status")).toContainText("未暴露 V4L2 focus_auto");
 });
 
-test("峰值对焦默认启用并在预览边缘绘制高亮", async ({ page }) => {
+test("峰值对焦默认关闭且可手动启用和关闭边缘高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
   await openPreviewTools(page);
 
   await expect(page.getByTestId("preview-image")).toBeVisible();
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
+  const canvas = page.getByTestId("focus-peaking-canvas");
+  const threshold = page.getByLabel("峰值对焦阈值");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(canvas).toBeHidden();
+  await expect(threshold).toBeDisabled();
+  expect(await countFocusPeakingPixels(page)).toBe(0);
+
+  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("focus-peaking-canvas")).toBeAttached();
+  await expect(threshold).toBeEnabled();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
-  await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "worker");
+  await expect(canvas).toHaveAttribute("data-renderer", "worker");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(canvas).toBeHidden();
+  await expect(threshold).toBeDisabled();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBe(0);
 });
 
 test("4K 对焦位图在传输前缩小且连续掩码复用画布并释放位图", async ({ page }) => {
@@ -534,6 +548,8 @@ test("4K 对焦位图在传输前缩小且连续掩码复用画布并释放位�
     status: 200, contentType: "image/jpeg", body: Buffer.from(jpeg, "base64"),
   }));
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   await expect.poll(() => page.evaluate(() => window.__peakingTransfer.maskCloses)).toBeGreaterThanOrEqual(3);
   const metrics = await page.evaluate(() => window.__peakingTransfer);
@@ -548,6 +564,8 @@ test("4K 对焦位图在传输前缩小且连续掩码复用画布并释放位�
 test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
 
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   const initialPixels = await countFocusPeakingPixels(page);
@@ -576,6 +594,7 @@ test("峰值对焦在后台暂停并在录制期间保持启用", async ({ page 
   await openPreviewTools(page);
 
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
+  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 
@@ -625,6 +644,8 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   });
   const preview = await routeFocusPeakingPreview(page, { limit: 8 });
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
 
   await expect.poll(() => preview.requests).toBeGreaterThan(8);
   await page.waitForTimeout(260);
@@ -1429,6 +1450,8 @@ test("位图不可用时预览仍显示原始像素并支持对焦", async ({ pa
   await page.addInitScript(() => { window.createImageBitmap = undefined; });
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   const image = page.getByTestId("preview-image");
   await expect(image).toHaveAttribute("width", "32");
@@ -1635,6 +1658,8 @@ test("不支持位图缩放的浏览器使用对焦回退", async ({ page }) => 
   });
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
   expect(await page.evaluate(() => window.__resizeAttempts)).toBe(1);
@@ -1644,6 +1669,8 @@ test("不支持 Worker 的浏览器仍提供有界对焦回退", async ({ page }
   await page.addInitScript(() => { Object.defineProperty(window, "OffscreenCanvas", { value: undefined }); });
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
 });

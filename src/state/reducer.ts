@@ -152,7 +152,7 @@ export const initialState: AppState = {
   inspect: "both",
   panel: "none",
   fullFrame: true,
-  focusPeaking: { enabled: true, threshold: 96 },
+  focusPeaking: { enabled: false, threshold: 96 },
 };
 
 function withCameraFocus(runtime: DeviceRuntime, focus: CameraFocusStatus): DeviceRuntime {
