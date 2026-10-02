@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { followCaptureEvents, followNetworkEvents } from "./api/events";
-import { followLatestPreview, type PreviewState } from "./api/preview";
 import { visibleError } from "./state/store";
 import { store } from "./state/store";
 import { useEchoState } from "./state/useStore";
@@ -10,7 +9,8 @@ import { DevicePanel } from "./ui/DevicePanel";
 import { Alerts, HazardBand } from "./ui/HazardBand";
 import { NetworkPanel } from "./ui/NetworkPanel";
 import { SessionsPanel } from "./ui/SessionsPanel";
-import { Stage, StageOverlays } from "./ui/Stage";
+import { StageOverlays } from "./ui/Stage";
+import { LiveStage } from "./ui/LiveStage";
 import { TopBar } from "./ui/TopBar";
 import { FirmwarePanel } from "./ui/FirmwarePanel";
 
@@ -28,8 +28,7 @@ function initialInspect(): "both" | "left" {
 export function App() {
   const [firmwareOpen, setFirmwareOpen] = useState(false);
   const state = useEchoState();
-  const [frameUrl, setFrameUrl] = useState<string | null>(null);
-  const [previewState, setPreviewState] = useState<PreviewState>("waiting");
+  const [previewSource, setPreviewSource] = useState<AbortController | null>(null);
   const started = useRef(false);
   const eventController = useRef<AbortController | null>(null);
   const networkEventController = useRef<AbortController | null>(null);
@@ -44,6 +43,7 @@ export function App() {
       return;
     }
     started.current = true;
+    let stopped = false;
     let captureReconcileTimer: number | null = null;
     let panelReconcileTimer: number | null = null;
 
@@ -80,7 +80,7 @@ export function App() {
       document.addEventListener("visibilitychange", followVisibility);
     };
     void store.loadInitialState().then((ok) => {
-      if (ok) {
+      if (ok && !stopped) {
         startLiveConnections();
         startReconciliation();
       }
@@ -121,15 +121,12 @@ export function App() {
       if (!previewController.current && store.getState().device?.capabilities.preview) {
         const controller = new AbortController();
         previewController.current = controller;
-        void followLatestPreview({
-          signal: controller.signal,
-          onFrame: setFrameUrl,
-          onState: setPreviewState,
-        });
+        setPreviewSource(controller);
       }
     }
 
     const stop = () => {
+      stopped = true;
       eventController.current?.abort();
       networkEventController.current?.abort();
       previewController.current?.abort();
@@ -152,7 +149,7 @@ export function App() {
 
   return (
     <div class="echo">
-      <Stage state={state} frameUrl={frameUrl} previewState={previewState} />
+      <LiveStage state={state} controller={previewSource} />
       <TopBar state={state} onVersion={() => {
         store.dispatch({ type: "panel.closed" });
         setFirmwareOpen((open) => !open);

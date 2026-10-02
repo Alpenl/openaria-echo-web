@@ -1436,15 +1436,17 @@ test("位图不可用时预览仍显示原始像素并支持对焦", async ({ pa
   expect(await image.evaluate((canvas) => canvas.getContext("2d").getImageData(0, 0, 32, 16).data.some((value, index) => index % 4 !== 3 && value > 0))).toBe(true);
 });
 
-test("页面中止会释放等待绘制的原生位图", async ({ page }) => {
+for (const pendingStage of ["decode", "paint"]) {
+test(`页面中止会释放等待 ${pendingStage} 的原生位图`, async ({ page }) => {
   await page.addInitScript(() => {
-    const metrics = window.__bitmapLifetime = { live: new Set(), peak: 0, holdPaint: false };
+    const metrics = window.__bitmapLifetime = { live: new Set(), peak: 0, holdPaint: false, holdDecode: false, decodes: [] };
     const create = window.createImageBitmap;
     window.createImageBitmap = async function (source, ...args) {
       const image = await create(source, ...args);
       if (source instanceof Blob) {
         metrics.live.add(image);
         metrics.peak = Math.max(metrics.peak, metrics.live.size);
+        if (metrics.holdDecode) await new Promise((resolve) => metrics.decodes.push(resolve));
       }
       return image;
     };
@@ -1459,11 +1461,136 @@ test("页面中止会释放等待绘制的原生位图", async ({ page }) => {
   const source = await routeFocusPeakingPreview(page);
   await page.goto("/");
   await expect.poll(() => source.requests).toBeGreaterThan(10);
-  await page.evaluate(() => { window.__bitmapLifetime.holdPaint = true; });
+  await page.evaluate((stage) => {
+    window.__bitmapLifetime.holdPaint = stage === "paint";
+    window.__bitmapLifetime.holdDecode = stage === "decode";
+  }, pendingStage);
   await page.waitForTimeout(150);
   await page.evaluate(() => { window.dispatchEvent(new Event("pagehide")); });
+  await page.evaluate(() => {
+    window.__bitmapLifetime.holdDecode = false;
+    for (const resolve of window.__bitmapLifetime.decodes) resolve();
+  });
   await expect.poll(() => page.evaluate(() => window.__bitmapLifetime.live.size)).toBe(0);
   expect(await page.evaluate(() => window.__bitmapLifetime.peak)).toBeLessThanOrEqual(4);
+});
+}
+
+test("预览新帧不重复格式化会话台账且查询仍更新列表", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__sessionFormats = 0;
+    const toFixed = Number.prototype.toFixed;
+    Number.prototype.toFixed = function (...args) {
+      // 125 s is the fixture's first session duration, rendered only by its row.
+      if (Number(this) === 125) window.__sessionFormats++;
+      return toFixed.apply(this, args);
+    };
+  });
+  let freezeControl = false;
+  let releaseControl;
+  const controlGate = new Promise((resolve) => { releaseControl = resolve; });
+  await page.route("**/api/v4/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (freezeControl && !path.endsWith("/preview") && !path.endsWith("/events")) {
+      await controlGate;
+    }
+    await route.continue();
+  });
+  const preview = await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  await openPanel(page, "会话台账");
+  const firstName = await page.getByTestId("session-item").first().locator(".session-name").textContent();
+  await expect.poll(() => preview.requests).toBeGreaterThanOrEqual(8);
+  freezeControl = true;
+  try {
+    // Finish already-delivered control updates before measuring only frames.
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { window.__sessionFormats = 0; });
+    const before = preview.requests;
+    await expect.poll(() => preview.requests).toBeGreaterThanOrEqual(before + 12);
+    expect(await page.evaluate(() => window.__sessionFormats)).toBe(0);
+    await page.getByLabel("搜索会话").fill(firstName);
+    await expect(page.getByTestId("session-item")).toHaveCount(1);
+    expect(await page.evaluate(() => window.__sessionFormats)).toBeGreaterThan(0);
+  } finally {
+    freezeControl = false;
+    releaseControl();
+  }
+});
+
+test("初始状态仍在加载时离开页面不会迟到启动预览和事件流", async ({ page }) => {
+  let deviceRequested = false;
+  let releaseDevice;
+  const deviceGate = new Promise((resolve) => { releaseDevice = resolve; });
+  await page.route("**/api/v4/device", async (route) => {
+    deviceRequested = true;
+    await deviceGate;
+    await route.continue();
+  });
+  const liveRequests = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/events") || path.endsWith("/preview")) liveRequests.push(path);
+  });
+  await page.goto("/");
+  await expect.poll(() => deviceRequested).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  releaseDevice();
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  await page.waitForTimeout(250);
+  expect(liveRequests).toEqual([]);
+});
+
+test("相机断开时释放迟到的解码位图并使用重连后的新帧", async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = window.__pendingBitmap = { live: new Set(), created: 0, firstUrl: null, release: null };
+    const createUrl = URL.createObjectURL;
+    URL.createObjectURL = function (blob) {
+      const url = createUrl.call(URL, blob);
+      if (blob.type.startsWith("image/") && metrics.firstUrl === null) metrics.firstUrl = url;
+      return url;
+    };
+    const create = window.createImageBitmap;
+    window.createImageBitmap = async function (source, ...args) {
+      const image = await create(source, ...args);
+      if (source instanceof Blob) {
+        metrics.live.add(image);
+        if (++metrics.created === 1) await new Promise((resolve) => { metrics.release = resolve; });
+      }
+      return image;
+    };
+    const close = ImageBitmap.prototype.close;
+    ImageBitmap.prototype.close = function () {
+      metrics.live.delete(this);
+      close.call(this);
+    };
+  });
+  let requests = 0;
+  let reconnected = false;
+  await page.route("**/api/v4/preview", async (route) => {
+    if (++requests === 1 || reconnected) {
+      await route.fulfill({ status: 200, contentType: "image/jpeg", body: Buffer.from(FOCUS_PEAKING_PREVIEW_JPEG, "base64") });
+    } else {
+      await route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({
+        schema: "ylx.api-error.v2",
+        error: { code: "camera_not_connected", message: "相机未接入", retryable: true },
+      }) });
+    }
+  });
+  await page.goto("/");
+  await expect(page.locator(".frame-empty")).toContainText("相机未接入");
+  await expect.poll(() => page.evaluate(() => window.__pendingBitmap.created)).toBe(1);
+  await page.evaluate(() => window.__pendingBitmap.release());
+  await expect.poll(() => page.evaluate(() => window.__pendingBitmap.live.size)).toBe(0);
+  await expect(page.getByTestId("preview-image")).toBeHidden();
+
+  reconnected = true;
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  expect(await page.getByTestId("preview-image").getAttribute("data-frame-url"))
+    .not.toBe(await page.evaluate(() => window.__pendingBitmap.firstUrl));
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  await expect.poll(() => page.evaluate(() => window.__pendingBitmap.live.size)).toBe(0);
 });
 
 test("预览把传输解码计入帧周期而不再额外等待 40ms", async ({ page }) => {

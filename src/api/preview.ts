@@ -114,7 +114,9 @@ export async function followLatestPreview(options: FollowLatestPreviewOptions): 
       currentUrl = null;
     }
     options.onFrame(null);
-    decodedFrames.clear();
+    // Pending decodes still own their cache entries. A disconnected camera
+    // retires their sequence; each task releases its bitmap when it finishes.
+    // Clearing the map here would lose those owners before close() can run.
   };
   options.signal.addEventListener("abort", discardReady, { once: true });
   try {
