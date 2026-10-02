@@ -4,7 +4,7 @@ import { store } from "../state/store";
 import { decodePreviewFrame, previewDimensions, type PreviewImage } from "../api/preview";
 
 import PeakingWorker from "./peaking.worker?worker&inline";
-import { fitPeakingDimensions, peakingPixels } from "./peaking";
+import { fitPeakingDimensions, PeakingProcessor } from "./peaking";
 
 function clearCanvas(canvas: HTMLCanvasElement | null): void {
   if (!canvas) {
@@ -18,6 +18,7 @@ function renderPeakingMask(
   canvas: HTMLCanvasElement,
   image: PreviewImage,
   threshold: number,
+  processor: PeakingProcessor,
 ): number {
   const sourceSize = previewDimensions(image);
   if (sourceSize.width < 3 || sourceSize.height < 3) {
@@ -36,7 +37,7 @@ function renderPeakingMask(
   context.clearRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
   const source = context.getImageData(0, 0, width, height);
-  source.data.set(peakingPixels(source.data, width, height, threshold));
+  processor.apply(source.data, width, height, threshold);
   context.putImageData(source, 0, 0);
   return 0;
 }
@@ -49,6 +50,7 @@ export function FocusPeakingOverlay({
   state: AppState;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fallbackProcessorRef = useRef<PeakingProcessor | null>(null);
   const busyRef = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const fallbackTimeRef = useRef(0);
@@ -193,7 +195,8 @@ export function FocusPeakingOverlay({
             } else if (performance.now() - fallbackTimeRef.current >= 100) {
               // Older browsers keep a bounded 10 Hz overlay; preview keeps its own cadence.
               fallbackTimeRef.current = performance.now();
-              renderPeakingMask(canvas, image, thresholdRef.current);
+              fallbackProcessorRef.current ??= new PeakingProcessor();
+              renderPeakingMask(canvas, image, thresholdRef.current, fallbackProcessorRef.current);
               canvas.dataset.renderer = "fallback";
             }
           } finally { mask?.close(); }

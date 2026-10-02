@@ -1,6 +1,7 @@
-import { fitPeakingDimensions, peakingPixels } from "./peaking";
+import { fitPeakingDimensions, PeakingProcessor } from "./peaking";
 
 let canvas: OffscreenCanvas | null = null;
+const peaking = new PeakingProcessor();
 self.onmessage = (event: MessageEvent<{ image: ImageBitmap; threshold: number }>) => {
   const { image, threshold } = event.data;
   try {
@@ -12,7 +13,7 @@ self.onmessage = (event: MessageEvent<{ image: ImageBitmap; threshold: number }>
     if (!context) throw new Error("No worker canvas context");
     context.drawImage(image, 0, 0, width, height);
     const data = context.getImageData(0, 0, width, height);
-    data.data.set(peakingPixels(data.data, width, height, threshold));
+    peaking.apply(data.data, width, height, threshold);
     context.putImageData(data, 0, 0);
     // transferToImageBitmap gives the canvas fresh storage for the next frame.
     const mask = canvas.transferToImageBitmap();
