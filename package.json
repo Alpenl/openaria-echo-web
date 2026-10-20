@@ -1,9 +1,9 @@
 {
   "name": "openaria-echo-web",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "type": "module",
-  "description": "Open Aria Echo / Web — browser client for Open Aria Conductor",
+  "description": "Open Aria Echo / Web \u2014 browser client for Open Aria Conductor",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "dev": "vite",
