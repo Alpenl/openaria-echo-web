@@ -2043,16 +2043,16 @@ test("结束录制原样显示 API problem 且服务恢复后可重试", async (
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("会话列表保持生产终态与网关可用性分离并显示发现诊断", async ({ page }) => {
+test("录像列表统一显示已保存并保留真实读取故障", async ({ page }) => {
   await page.goto("/");
   await openPanel(page, "会话台账");
 
   const usableSession = page.getByTestId("session-item").filter({ hasText: "入口标定" });
-  await expect(usableSession.getByText("已封存", { exact: true })).toBeVisible();
-  await expect(usableSession.getByText("可用", { exact: true })).toBeVisible();
+  await expect(usableSession.getByText("已保存", { exact: true })).toBeVisible();
+  await expect(page.getByText("已验证可用", { exact: true })).toHaveCount(0);
 
   const unknownSession = page.getByTestId("session-item").filter({ hasText: "第二段采集" });
-  await expect(unknownSession.getByText("尚未校验", { exact: true })).toBeVisible();
+  await expect(unknownSession.getByText("已保存", { exact: true })).toBeVisible();
   await expect(page.getByText("发现一个无法读取的会话清单，已隔离")).toBeVisible();
 });
 
@@ -2417,7 +2417,7 @@ test("中断录制保留完整前段并在列表标明可用", async ({ page, re
   await expect(page.getByTestId("retained-outcome")).toHaveText("部分已保存");
   await expect(page.getByText("录制已中断，已保存前 300.0 秒，可导出")).toBeVisible();
   const saved = page.getByTestId("session-item").filter({ hasText: "中断后的完整前段" });
-  await expect(saved).toHaveAttribute("data-verdict", "usable");
+  await expect(saved).toHaveAttribute("data-outcome", "sealed");
   await expect(saved).toContainText("录制中断 · 完整前段已保存");
   await page.getByRole("button", { name: "未成功", exact: true }).click();
   await expect(saved).toBeVisible();
@@ -2523,4 +2523,25 @@ test("customer 401 后可输入 Bearer 令牌并连接设备", async ({ page, re
   );
   expect(authenticatedEvents).toHaveLength(1);
   expect(body.preview.maxConcurrent).toBe(1);
+});
+
+test("旧录像没有校验结果也能直接回放下载且不显示校验状态", async ({ page }) => {
+  await page.route("**/api/v4/sessions?*", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    for (const item of json.items) item.verification = null;
+    await route.fulfill({ response, json });
+  });
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await page.getByRole("button", { name: "已保存", exact: true }).click();
+  await expect(page.getByTestId("session-item")).toHaveCount(2);
+  await expect(page.getByText(/尚未校验|已验证可用/)).toHaveCount(0);
+  await page.getByTestId("session-item").filter({ hasText: "入口标定" }).click();
+  const detail = page.getByRole("complementary", { name: "会话详情" });
+  await expect(detail.getByText("已保存", { exact: true })).toBeVisible();
+  await expect(detail.locator("a.download").first()).toHaveAttribute("aria-disabled", "false");
+  await expect(detail.locator("a.download").first()).toHaveAttribute("href", /\/artifacts\//);
+  await expect(detail.getByTestId("replay-left")).toBeVisible();
+  await expect(detail.getByText(/校验|消费方判断|生产方声明/)).toHaveCount(0);
 });

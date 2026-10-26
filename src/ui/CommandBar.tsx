@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
-import { formatCount, formatMiB, formatSeconds, formatStepProgress } from "./format";
+import { formatCount, formatMiB, formatSeconds } from "./format";
 import { CalibrationIcon, CloseIcon, EditIcon, SessionsIcon } from "./icons";
 
 const CALIBRATION_DISABLED_REASON_LABELS: Record<CalibrationCaptureDisabledReason, string> = {
@@ -292,12 +292,6 @@ export function CommandBar({ state }: { state: AppState }) {
             <dt>写入</dt>
             <dd data-testid="bytes-written" data-idle={String(!progress)}>
               {formatMiB(progress?.bytes_written ?? 0)}
-            </dd>
-          </div>
-          <div>
-            <dt>校验</dt>
-            <dd data-testid="verification-progress" data-idle={String(!progress?.verification)}>
-              {formatStepProgress(progress?.verification)}
             </dd>
           </div>
         </dl>

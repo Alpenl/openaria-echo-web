@@ -6,8 +6,8 @@
  * 信号色配额（越界即错）：
  *   record  实心红   仅 device_state=recording
  *   fault   红斜纹   blocked / failed / abandoned / media_lost / unusable
- *   caution 琥珀     finalizing / verifying / degraded / 尚未校验 / 断线
- *   positive 绿      已连接或消费方确认可用
+ *   caution 琥珀     finalizing / degraded / 断线
+ *   positive 绿      已连接或录制已保存
  *   live    冷青     仅实时数值前景，绝不作背景
  * 全站无循环动画：录制指示常亮。
  */
@@ -1209,7 +1209,7 @@ a:hover {
   color: var(--fault);
 }
 
-/* 每行左侧一根 3px 状态色条：绿=可用、琥珀=未成功/未校验、红=不可用。 */
+/* 每行左侧一根 3px 状态色条：绿=已保存、琥珀=未成功。 */
 .session-row::before {
   content: "";
   position: absolute;
@@ -1220,12 +1220,11 @@ a:hover {
   background: var(--positive);
 }
 
-.session-row[data-verdict="unknown"]::before,
 .session-row[data-outcome="unsuccessful"]::before {
   background: var(--caution);
 }
 
-.session-row[data-verdict="unusable"]::before {
+.session-row[data-outcome="failed"]::before {
   background: var(--fault);
 }
 
@@ -1281,25 +1280,6 @@ a:hover {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--ink-3);
-}
-
-.verdict {
-  flex: none;
-  font-family: var(--sans);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.verdict[data-verdict="usable"] {
-  color: var(--positive);
-}
-
-.verdict[data-verdict="unusable"] {
-  color: var(--fault);
-}
-
-.verdict[data-verdict="unknown"] {
-  color: var(--caution);
 }
 
 .panel-empty {
@@ -1525,67 +1505,7 @@ a:hover {
   }
 }
 
-/* -------------------------------------------------- 判定印章 / 容量条 */
-
-/* 生产方声明 vs 消费方判断：并排两枚印章，这是产品核心语义，必须一眼看到。 */
-.verdict-stamps {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.verdict-stamp {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 12px;
-  border: 1px solid var(--hairline-2);
-  border-radius: 5px;
-}
-
-.verdict-stamp dt {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-
-.verdict-stamp dd {
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-.verdict-stamp .stamp-sub {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--ink-4);
-}
-
-.verdict-stamp[data-tone="permit"] {
-  border-color: rgba(70, 201, 138, 0.45);
-}
-
-.verdict-stamp[data-tone="permit"] dd {
-  color: var(--positive);
-}
-
-.verdict-stamp[data-tone="fault"] {
-  border-color: rgba(255, 59, 45, 0.45);
-}
-
-.verdict-stamp[data-tone="fault"] dd {
-  color: var(--fault);
-}
-
-.verdict-stamp[data-tone="caution"] {
-  border-color: rgba(224, 160, 32, 0.45);
-}
-
-.verdict-stamp[data-tone="caution"] dd {
-  color: var(--caution);
-}
+/* -------------------------------------------------- 容量条 */
 
 .capacity-bar {
   height: 6px;

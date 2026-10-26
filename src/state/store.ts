@@ -179,8 +179,7 @@ export class EchoStore {
         await this.synchronizeClock();
       }
 
-      // 会话清单只读取轻量 manifest 元数据；制品完整校验延迟到回放/下载，
-      // 避免大卷历史内容阻塞权威状态、SSE 或预览。
+      // 列表只读取录像信息；回放按需读取文件，不扫描整段录像。
       void deviceApi
         .getNetwork()
         .then((network) => this.dispatch({ type: "network.loaded", payload: network }))

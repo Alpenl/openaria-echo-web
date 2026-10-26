@@ -2,22 +2,15 @@ import { useState } from "preact/hooks";
 import type { AppState, SessionFilter } from "../state/reducer";
 import { store } from "../state/store";
 import type { SessionSummary } from "../api/types";
-import { formatGiB, formatSeconds, verdictLabel } from "./format";
+import { formatGiB, formatSeconds } from "./format";
 import { CloseIcon, DeleteIcon, RefreshIcon, SearchIcon } from "./icons";
 import { SessionDetail } from "./SessionDetail";
 
 const FILTERS: Array<{ id: SessionFilter; label: string; tone?: "caution" }> = [
   { id: "all", label: "全部" },
-  { id: "usable", label: "已验证可用" },
+  { id: "saved", label: "已保存" },
   { id: "unsuccessful", label: "未成功", tone: "caution" },
 ];
-
-function verdictOf(session: SessionSummary): "usable" | "unusable" | "unknown" {
-  if (session.producer_outcome !== "sealed") {
-    return "unknown";
-  }
-  return session.verification?.verdict ?? "unknown";
-}
 
 function wasInterrupted(session: SessionSummary, savedSessionId?: string): boolean {
   return session.session_id === savedSessionId || (session.verification?.diagnostics.some((diagnostic) =>
@@ -26,7 +19,7 @@ function wasInterrupted(session: SessionSummary, savedSessionId?: string): boole
 }
 
 function matches(session: SessionSummary, query: string, filter: SessionFilter, savedSessionId?: string): boolean {
-  if (filter === "usable" && verdictOf(session) !== "usable") {
+  if (filter === "saved" && session.producer_outcome !== "sealed") {
     return false;
   }
   if (filter === "unsuccessful" && session.producer_outcome === "sealed" && !wasInterrupted(session, savedSessionId)) {
@@ -142,7 +135,6 @@ export function SessionsPanel({ state }: { state: AppState }) {
               class="session-row"
               data-testid="session-item"
               data-outcome={session.producer_outcome === "sealed" ? "sealed" : "unsuccessful"}
-              data-verdict={verdictOf(session)}
               onClick={() => {
                 setDeleteRequested(null);
                 void store.openSession(session.session_id, session.producer_outcome);
@@ -150,17 +142,13 @@ export function SessionsPanel({ state }: { state: AppState }) {
             >
               <span class="session-head">
                 <span class="session-name">{session.display_name}</span>
-                {/* 生产方声明与消费方判断分开投影，绝不合并成一个「状态」。 */}
-                <span class="verdict" data-verdict={verdictOf(session)}>
-                  {verdictLabel(session.verification?.verdict)}
-                </span>
               </span>
               <span class="session-meta">
                 <span>{formatSeconds(session.duration_seconds)}</span>
                 <span>{formatGiB(session.total_bytes)}</span>
                 <span class="producer">
                   {wasInterrupted(session, savedSessionId) ? "录制中断 · 完整前段已保存" :
-                    session.producer_outcome === "sealed" ? "已封存" : session.producer_outcome}
+                    session.producer_outcome === "sealed" ? "已保存" : session.producer_outcome}
                 </span>
                 <code class="session-uuid">{session.session_id}</code>
               </span>
