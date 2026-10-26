@@ -68,16 +68,6 @@ export function formatStepProgress(
   return `${completed}/${total}`;
 }
 
-export function verdictLabel(verdict: string | null | undefined): string {
-  if (verdict === "usable") {
-    return "可用";
-  }
-  if (verdict === "unusable") {
-    return "不可用";
-  }
-  return "尚未校验";
-}
-
 export function formatClock(value: string | null | undefined): string {
   if (!value) {
     return "--";
@@ -110,7 +100,7 @@ const DEVICE_STATE_LABELS: Record<string, string> = {
   finalizing: "正在结束",
   idle: "待机",
   recording: "录制中",
-  verifying: "校验中",
+  verifying: "正在保存",
 };
 
 /** 保留的未成功终止结果标签；只出现在危险带。 */

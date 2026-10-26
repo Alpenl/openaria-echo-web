@@ -169,7 +169,7 @@ export interface CaptureStatus {
   snapshot: CaptureSnapshot;
 }
 
-/** 生产方自洽声明与消费方独立判断是两件事，列表里分开投影，绝不合并成一个状态。 */
+/** 兼容旧固件返回的诊断回执；保存、回放和下载不依赖此字段。 */
 export interface SessionVerificationBase {
   actor: "gateway";
   validator: { name: string; version: string; build_sha256: string };

@@ -16,7 +16,7 @@ export function HazardBand({ state }: { state: AppState }) {
   );
   const saved = state.sessions.items.find((session) =>
     session.session_id === retained.recording_state.session_id &&
-    session.verification?.verdict === "usable"
+    session.producer_outcome === "sealed"
   );
   return (
     <section class="hazard" role="status" aria-label="设备危险状态">

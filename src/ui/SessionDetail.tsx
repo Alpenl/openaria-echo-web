@@ -130,7 +130,7 @@ function SessionReplay({
           </select>
         </label>
         <span class="replay-hint">
-          {enabled ? "播放时按当前会话做完整字节校验" : "设备未声明 Range 回放能力"}
+          {enabled ? "选择分段即可播放" : "设备未声明 Range 回放能力"}
         </span>
       </div>
       <div class="replay-grid">
@@ -172,8 +172,8 @@ function SessionReplay({
       {playbackError ? (
         <p class="panel-note" role="alert">
           {detail.video?.codec === "hevc"
-            ? "H.265 回放需要浏览器和系统支持 HEVC。若此浏览器无法播放，请下载后使用支持 HEVC 的播放器或 Bridge 导出；文件可用性以会话校验结果为准。"
-            : "回放制品无法读取；设备会在首次播放时完成校验，请稍后重试或检查会话是否已被替换。"}
+            ? "H.265 回放需要浏览器和系统支持 HEVC。若此浏览器无法播放，请下载后使用支持 HEVC 的播放器或 Bridge 导出。"
+            : "录像暂时无法播放，请重试或下载后使用本地播放器打开。"}
         </p>
       ) : null}
     </section>
@@ -298,9 +298,7 @@ export function SessionDetail({ state, requestDelete = false }: {
 
   const detail = selected.detail;
   const artifacts = collectArtifacts(detail);
-  const verdict = summary?.verification?.verdict ?? null;
-  // 门禁：只有消费方独立判为 usable 且设备声明 range_download 时才出现下载入口。
-  const downloadable = verdict === "usable" && state.device?.capabilities.range_download === true;
+  const downloadable = detail.sealed && state.device?.capabilities.range_download === true;
   const deletionSupported = state.device?.capabilities.session_deletion === true;
   const manifestSha256 = selected.manifestSha256 ?? null;
   const hasManifestDigest =
@@ -341,35 +339,10 @@ export function SessionDetail({ state, requestDelete = false }: {
       <Head title={detail.display_name} onBack={back} />
       <div class="panel-body">
         <section class="detail-section">
-          <span class="eyebrow">OUTCOME</span>
-          <dl class="verdict-stamps">
-            <div class="verdict-stamp" data-tone={detail.sealed ? "permit" : "caution"}>
-              <dt>生产方声明</dt>
-              <dd>{detail.sealed ? "SEALED" : "NOT SEALED"}</dd>
-              <span class="stamp-sub">封存 {formatClock(detail.sealed_at)}</span>
-            </div>
-            <div
-              class="verdict-stamp"
-              data-tone={verdict === "usable" ? "permit" : verdict === "unusable" ? "fault" : "caution"}
-            >
-              <dt>消费方判断</dt>
-              <dd>{verdict ? verdict.toUpperCase() : "尚未校验"}</dd>
-              <span class="stamp-sub">
-                {summary?.verification?.verified_at
-                  ? `gateway ${formatClock(summary.verification.verified_at)}`
-                  : "尚未校验"}
-              </span>
-            </div>
-          </dl>
           <dl class="facts">
-            <div>
-              <dt>manifest sha256</dt>
-              <dd class="artifact-hash">{summary?.verification?.manifest_sha256 ?? "--"}</dd>
-            </div>
+            <div><dt>状态</dt><dd>{detail.sealed ? "已保存" : "保存未完成"}</dd></div>
+            <div><dt>保存时间</dt><dd>{formatClock(detail.sealed_at)}</dd></div>
           </dl>
-          <p style="font-size:12px;color:var(--ink-3);text-wrap:pretty">
-            sealed 只证明生产方给出自洽声明；能否消费由 gateway 对当前字节独立判定，两者分开显示。
-          </p>
         </section>
 
         {detail.capture_audit?.schema === "openaria.capture-audit.v1" ? (
@@ -471,9 +444,7 @@ export function SessionDetail({ state, requestDelete = false }: {
           <span class="eyebrow">ARTIFACTS · {artifacts.length}</span>
           {!downloadable ? (
             <p style="font-size:12px;color:var(--caution);text-wrap:pretty">
-              {verdict === "usable"
-                ? "本机未声明 range_download 能力，因此不提供下载。"
-                : "只有消费方独立判为可用的不可变快照才提供下载。"}
+              {detail.sealed ? "当前设备不支持下载。" : "录像保存完成后即可下载。"}
             </p>
           ) : null}
           {artifacts.map((artifact) => (
@@ -534,7 +505,7 @@ export function SessionDetail({ state, requestDelete = false }: {
         {!deletionSupported ? (
           <p class="panel-note">当前固件未声明远程删除能力。</p>
         ) : !hasManifestDigest ? (
-          <p class="panel-note">该会话尚未完成网关校验，暂不能安全删除。</p>
+          <p class="panel-note">未能读取这条录像的信息，请刷新后重试。</p>
         ) : null}
 
         {deleteConfirmation ? (

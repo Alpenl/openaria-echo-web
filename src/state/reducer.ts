@@ -17,7 +17,7 @@ import type {
 export type ConnectionState = "connecting" | "connected" | "disconnected";
 export type InspectMode = "both" | "left" | "right";
 export type PanelId = "none" | "sessions" | "device" | "network";
-export type SessionFilter = "all" | "usable" | "unsuccessful";
+export type SessionFilter = "all" | "saved" | "unsuccessful";
 export type NetworkOperation = "apply" | "retry" | "forget";
 export type NetworkCommandPhase = "idle" | "submitting" | "accepted" | "failed";
 
