@@ -305,10 +305,10 @@ export class EchoStore {
           this.dispatch({ type: "sessions.loaded", payload: sessions, append: false });
         } catch (error) {
           if (isSessionVolumeUnavailable(error)) {
-            this.dispatch({ type: "sessions.unavailable" });
+            this.dispatch({ type: "sessions.unavailable", error: visibleError(error) });
           } else {
             console.warn(error);
-            this.dispatch({ type: "sessions.failed" });
+            this.dispatch({ type: "sessions.failed", error: visibleError(error) });
           }
         }
       } while (this.sessionsRefreshDirty);
@@ -363,10 +363,10 @@ export class EchoStore {
           this.dispatch({ type: "sessions.invalidated" });
           this.sessionsRefreshDirty = true;
         } else if (isSessionVolumeUnavailable(error)) {
-          this.dispatch({ type: "sessions.unavailable" });
+          this.dispatch({ type: "sessions.unavailable", error: visibleError(error) });
         } else {
           console.warn(error);
-          this.dispatch({ type: "sessions.failed" });
+          this.dispatch({ type: "sessions.failed", error: visibleError(error) });
         }
       })
       .finally(() => {
