@@ -472,22 +472,100 @@ test("网页明确显示相机未暴露自动对焦控制", async ({ page, reque
   await expect(page.locator("#focus-status")).toContainText("未暴露 V4L2 focus_auto");
 });
 
-test("峰值对焦默认启用并在预览边缘绘制高亮", async ({ page }) => {
+test("峰值对焦默认关闭且可手动启用和关闭边缘高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
   await openPreviewTools(page);
 
   await expect(page.getByTestId("preview-image")).toBeVisible();
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
+  const canvas = page.getByTestId("focus-peaking-canvas");
+  const threshold = page.getByLabel("峰值对焦阈值");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(canvas).toBeHidden();
+  await expect(threshold).toBeDisabled();
+  expect(await countFocusPeakingPixels(page)).toBe(0);
+
+  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("focus-peaking-canvas")).toBeAttached();
+  await expect(threshold).toBeEnabled();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect(canvas).toHaveAttribute("data-renderer", "worker");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(canvas).toBeHidden();
+  await expect(threshold).toBeDisabled();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBe(0);
+});
+
+test("4K 对焦位图在传输前缩小且连续掩码复用画布并释放位图", async ({ page }) => {
+  const jpeg = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 3840;
+    canvas.height = 1080;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "black";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "white";
+    context.fillRect(960, 270, 1920, 540);
+    return canvas.toDataURL("image/jpeg").split(",")[1];
+  });
+  await page.addInitScript(() => {
+    const metrics = window.__peakingTransfer = { sizes: [], detached: 0, maskCloses: 0, redundantResets: 0 };
+    const localImages = new WeakSet();
+    const create = window.createImageBitmap;
+    window.createImageBitmap = async (...args) => {
+      const image = await create(...args);
+      localImages.add(image);
+      return image;
+    };
+    const close = ImageBitmap.prototype.close;
+    ImageBitmap.prototype.close = function () {
+      if (!localImages.has(this)) metrics.maskCloses++;
+      close.call(this);
+    };
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, ...args) {
+      const image = message.image;
+      if (image instanceof ImageBitmap) metrics.sizes.push([image.width, image.height]);
+      const result = post.call(this, message, ...args);
+      if (image instanceof ImageBitmap && image.width === 0) metrics.detached++;
+      return result;
+    };
+    for (const dimension of ["width", "height"]) {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, dimension);
+      Object.defineProperty(HTMLCanvasElement.prototype, dimension, {
+        ...descriptor,
+        set(value) {
+          if (this.dataset.testid === "focus-peaking-canvas" && this[dimension] === value) metrics.redundantResets++;
+          descriptor.set.call(this, value);
+        },
+      });
+    }
+  });
+  await page.route("**/api/v4/preview", (route) => route.fulfill({
+    status: 200, contentType: "image/jpeg", body: Buffer.from(jpeg, "base64"),
+  }));
+  await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.__peakingTransfer.maskCloses)).toBeGreaterThanOrEqual(3);
+  const metrics = await page.evaluate(() => window.__peakingTransfer);
+  expect(metrics.sizes.every(([width, height]) => width * height <= 512 * 1024)).toBe(true);
+  expect(metrics.sizes.every(([width, height]) => width < 3840 && Math.abs(width / height - 3840 / 1080) < 0.01)).toBe(true);
+  expect(metrics.detached).toBe(metrics.sizes.length);
+  expect(metrics.redundantResets).toBe(0);
+  await expect(page.getByTestId("preview-image")).toHaveAttribute("width", "3840");
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "worker");
 });
 
 test("峰值对焦阈值会改变预览边缘高亮", async ({ page }) => {
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
 
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   const initialPixels = await countFocusPeakingPixels(page);
@@ -516,6 +594,7 @@ test("峰值对焦在后台暂停并在录制期间保持启用", async ({ page 
   await openPreviewTools(page);
 
   const toggle = page.getByRole("switch", { name: "峰值对焦" });
+  await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
 
@@ -565,6 +644,8 @@ test("峰值对焦慢处理只保留最新预览帧", async ({ page }) => {
   });
   const preview = await routeFocusPeakingPreview(page, { limit: 8 });
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
 
   await expect.poll(() => preview.requests).toBeGreaterThan(8);
   await page.waitForTimeout(260);
@@ -1369,6 +1450,8 @@ test("位图不可用时预览仍显示原始像素并支持对焦", async ({ pa
   await page.addInitScript(() => { window.createImageBitmap = undefined; });
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   const image = page.getByTestId("preview-image");
   await expect(image).toHaveAttribute("width", "32");
@@ -1376,15 +1459,17 @@ test("位图不可用时预览仍显示原始像素并支持对焦", async ({ pa
   expect(await image.evaluate((canvas) => canvas.getContext("2d").getImageData(0, 0, 32, 16).data.some((value, index) => index % 4 !== 3 && value > 0))).toBe(true);
 });
 
-test("页面中止会释放等待绘制的原生位图", async ({ page }) => {
+for (const pendingStage of ["decode", "paint"]) {
+test(`页面中止会释放等待 ${pendingStage} 的原生位图`, async ({ page }) => {
   await page.addInitScript(() => {
-    const metrics = window.__bitmapLifetime = { live: new Set(), peak: 0, holdPaint: false };
+    const metrics = window.__bitmapLifetime = { live: new Set(), peak: 0, holdPaint: false, holdDecode: false, decodes: [] };
     const create = window.createImageBitmap;
     window.createImageBitmap = async function (source, ...args) {
       const image = await create(source, ...args);
       if (source instanceof Blob) {
         metrics.live.add(image);
         metrics.peak = Math.max(metrics.peak, metrics.live.size);
+        if (metrics.holdDecode) await new Promise((resolve) => metrics.decodes.push(resolve));
       }
       return image;
     };
@@ -1399,11 +1484,136 @@ test("页面中止会释放等待绘制的原生位图", async ({ page }) => {
   const source = await routeFocusPeakingPreview(page);
   await page.goto("/");
   await expect.poll(() => source.requests).toBeGreaterThan(10);
-  await page.evaluate(() => { window.__bitmapLifetime.holdPaint = true; });
+  await page.evaluate((stage) => {
+    window.__bitmapLifetime.holdPaint = stage === "paint";
+    window.__bitmapLifetime.holdDecode = stage === "decode";
+  }, pendingStage);
   await page.waitForTimeout(150);
   await page.evaluate(() => { window.dispatchEvent(new Event("pagehide")); });
+  await page.evaluate(() => {
+    window.__bitmapLifetime.holdDecode = false;
+    for (const resolve of window.__bitmapLifetime.decodes) resolve();
+  });
   await expect.poll(() => page.evaluate(() => window.__bitmapLifetime.live.size)).toBe(0);
   expect(await page.evaluate(() => window.__bitmapLifetime.peak)).toBeLessThanOrEqual(4);
+});
+}
+
+test("预览新帧不重复格式化会话台账且查询仍更新列表", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__sessionFormats = 0;
+    const toFixed = Number.prototype.toFixed;
+    Number.prototype.toFixed = function (...args) {
+      // 125 s is the fixture's first session duration, rendered only by its row.
+      if (Number(this) === 125) window.__sessionFormats++;
+      return toFixed.apply(this, args);
+    };
+  });
+  let freezeControl = false;
+  let releaseControl;
+  const controlGate = new Promise((resolve) => { releaseControl = resolve; });
+  await page.route("**/api/v4/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (freezeControl && !path.endsWith("/preview") && !path.endsWith("/events")) {
+      await controlGate;
+    }
+    await route.continue();
+  });
+  const preview = await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect(page.locator(".connection")).toHaveText("已连接");
+  await openPanel(page, "会话台账");
+  const firstName = await page.getByTestId("session-item").first().locator(".session-name").textContent();
+  await expect.poll(() => preview.requests).toBeGreaterThanOrEqual(8);
+  freezeControl = true;
+  try {
+    // Finish already-delivered control updates before measuring only frames.
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { window.__sessionFormats = 0; });
+    const before = preview.requests;
+    await expect.poll(() => preview.requests).toBeGreaterThanOrEqual(before + 12);
+    expect(await page.evaluate(() => window.__sessionFormats)).toBe(0);
+    await page.getByLabel("搜索会话").fill(firstName);
+    await expect(page.getByTestId("session-item")).toHaveCount(1);
+    expect(await page.evaluate(() => window.__sessionFormats)).toBeGreaterThan(0);
+  } finally {
+    freezeControl = false;
+    releaseControl();
+  }
+});
+
+test("初始状态仍在加载时离开页面不会迟到启动预览和事件流", async ({ page }) => {
+  let deviceRequested = false;
+  let releaseDevice;
+  const deviceGate = new Promise((resolve) => { releaseDevice = resolve; });
+  await page.route("**/api/v4/device", async (route) => {
+    deviceRequested = true;
+    await deviceGate;
+    await route.continue();
+  });
+  const liveRequests = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/events") || path.endsWith("/preview")) liveRequests.push(path);
+  });
+  await page.goto("/");
+  await expect.poll(() => deviceRequested).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  releaseDevice();
+  await expect(page.getByTestId("capture-state")).toHaveText("待机");
+  await page.waitForTimeout(250);
+  expect(liveRequests).toEqual([]);
+});
+
+test("相机断开时释放迟到的解码位图并使用重连后的新帧", async ({ page }) => {
+  await page.addInitScript(() => {
+    const metrics = window.__pendingBitmap = { live: new Set(), created: 0, firstUrl: null, release: null };
+    const createUrl = URL.createObjectURL;
+    URL.createObjectURL = function (blob) {
+      const url = createUrl.call(URL, blob);
+      if (blob.type.startsWith("image/") && metrics.firstUrl === null) metrics.firstUrl = url;
+      return url;
+    };
+    const create = window.createImageBitmap;
+    window.createImageBitmap = async function (source, ...args) {
+      const image = await create(source, ...args);
+      if (source instanceof Blob) {
+        metrics.live.add(image);
+        if (++metrics.created === 1) await new Promise((resolve) => { metrics.release = resolve; });
+      }
+      return image;
+    };
+    const close = ImageBitmap.prototype.close;
+    ImageBitmap.prototype.close = function () {
+      metrics.live.delete(this);
+      close.call(this);
+    };
+  });
+  let requests = 0;
+  let reconnected = false;
+  await page.route("**/api/v4/preview", async (route) => {
+    if (++requests === 1 || reconnected) {
+      await route.fulfill({ status: 200, contentType: "image/jpeg", body: Buffer.from(FOCUS_PEAKING_PREVIEW_JPEG, "base64") });
+    } else {
+      await route.fulfill({ status: 503, contentType: "application/problem+json", body: JSON.stringify({
+        schema: "ylx.api-error.v2",
+        error: { code: "camera_not_connected", message: "相机未接入", retryable: true },
+      }) });
+    }
+  });
+  await page.goto("/");
+  await expect(page.locator(".frame-empty")).toContainText("相机未接入");
+  await expect.poll(() => page.evaluate(() => window.__pendingBitmap.created)).toBe(1);
+  await page.evaluate(() => window.__pendingBitmap.release());
+  await expect.poll(() => page.evaluate(() => window.__pendingBitmap.live.size)).toBe(0);
+  await expect(page.getByTestId("preview-image")).toBeHidden();
+
+  reconnected = true;
+  await expect(page.getByTestId("preview-image")).toBeVisible();
+  expect(await page.getByTestId("preview-image").getAttribute("data-frame-url"))
+    .not.toBe(await page.evaluate(() => window.__pendingBitmap.firstUrl));
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  await expect.poll(() => page.evaluate(() => window.__pendingBitmap.live.size)).toBe(0);
 });
 
 test("预览把传输解码计入帧周期而不再额外等待 40ms", async ({ page }) => {
@@ -1417,10 +1627,50 @@ test("预览把传输解码计入帧周期而不再额外等待 40ms", async ({ 
   expect(metrics.maxInFlight).toBe(1);
 });
 
+test("快速预览响应仍遵守设备 25 FPS 的生产预算", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__previewStarts = [];
+    const fetch = window.fetch;
+    window.fetch = function (input, ...args) {
+      if (String(input).endsWith("/api/v4/preview")) window.__previewStarts.push(performance.now());
+      return fetch.call(this, input, ...args);
+    };
+  });
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__previewStarts.length)).toBeGreaterThanOrEqual(26);
+  const starts = await page.evaluate(() => window.__previewStarts.slice(0, 26));
+  // Allow timer rounding, but reject the previous 30 FPS / 33 ms request loop.
+  expect(starts.at(-1) - starts[0]).toBeGreaterThanOrEqual(25 * 38);
+});
+
+test("不支持位图缩放的浏览器使用对焦回退", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__resizeAttempts = 0;
+    const create = window.createImageBitmap;
+    window.createImageBitmap = function (source, ...args) {
+      if (args[0]?.resizeWidth) {
+        window.__resizeAttempts++;
+        return Promise.reject(new TypeError("Bitmap resize unavailable"));
+      }
+      return create(source, ...args);
+    };
+  });
+  await routeFocusPeakingPreview(page);
+  await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
+  await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
+  await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
+  expect(await page.evaluate(() => window.__resizeAttempts)).toBe(1);
+});
+
 test("不支持 Worker 的浏览器仍提供有界对焦回退", async ({ page }) => {
   await page.addInitScript(() => { Object.defineProperty(window, "OffscreenCanvas", { value: undefined }); });
   await routeFocusPeakingPreview(page);
   await page.goto("/");
+  await openPreviewTools(page);
+  await page.getByRole("switch", { name: "峰值对焦" }).click();
   await expect.poll(() => countFocusPeakingPixels(page)).toBeGreaterThan(0);
   await expect(page.getByTestId("focus-peaking-canvas")).toHaveAttribute("data-renderer", "fallback");
 });

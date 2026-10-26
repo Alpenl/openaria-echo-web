@@ -140,19 +140,23 @@ export class EchoStore {
   dispatch = (action: Action): void => {
     const previous = this.state;
     this.state = reduceState(this.state, action);
-    if (
-      action.type === "capture.snapshot" &&
-      shouldAnnounceRetainedDiagnostics(previous, action.payload)
-    ) {
-      const retained = action.payload.snapshot.retained_unsuccessful?.recording_state.diagnostics;
-      if (retained?.length) {
-        const existing = new Set(
-          this.state.diagnostics.map((diagnostic) => `${diagnostic.code}|${diagnostic.at}`),
-        );
-        for (const diagnostic of retained) {
-          if (!existing.has(`${diagnostic.code}|${diagnostic.at}`)) {
-            this.state = reduceState(this.state, { type: "diagnostic.received", payload: diagnostic });
-          }
+    if (action.type === "capture.snapshot" && this.state !== previous) {
+      // Only accepted snapshots may announce errors. Recovery keeps the session
+      // active, so its diagnostics must be visible before the retained outcome.
+      const diagnostics = [
+        ...(action.payload.snapshot.active_recording?.recording_state.diagnostics ?? []),
+        ...(shouldAnnounceRetainedDiagnostics(previous, action.payload)
+          ? action.payload.snapshot.retained_unsuccessful?.recording_state.diagnostics ?? []
+          : []),
+      ];
+      const existing = new Set(
+        this.state.diagnostics.map((diagnostic) => `${diagnostic.code}|${diagnostic.at}`),
+      );
+      for (const diagnostic of diagnostics) {
+        const key = `${diagnostic.code}|${diagnostic.at}`;
+        if (!existing.has(key)) {
+          this.state = reduceState(this.state, { type: "diagnostic.received", payload: diagnostic });
+          existing.add(key);
         }
       }
     }

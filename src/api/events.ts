@@ -115,37 +115,48 @@ async function followEvents<T extends SsePayloadIdentity>(
         throw new Error("设备事件流没有响应正文");
       }
       const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let connected = false;
-      while (!options.signal.aborted) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        let boundary = buffer.search(/\r?\n\r?\n/);
-        while (boundary !== -1) {
-          const block = buffer.slice(0, boundary);
-          const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0] ?? "\n\n";
-          buffer = buffer.slice(boundary + separator.length);
-          const parsed = parseEvent<T>(
-            block,
-            expectedSchema,
-            mismatchMessage,
-            options.validatePayload,
-          );
-          if (parsed) {
-            await options.onEvent(parsed.payload);
-            lastEventId = parsed.id;
-            if (!connected) {
-              disconnectedSince = null;
-              options.onConnection?.("connected");
-              connected = true;
+      try {
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let connected = false;
+        while (!options.signal.aborted) {
+          const { done, value } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          let boundary = buffer.search(/\r?\n\r?\n/);
+          while (boundary !== -1) {
+            const block = buffer.slice(0, boundary);
+            const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)?.[0] ?? "\n\n";
+            buffer = buffer.slice(boundary + separator.length);
+            const parsed = parseEvent<T>(
+              block,
+              expectedSchema,
+              mismatchMessage,
+              options.validatePayload,
+            );
+            if (parsed) {
+              await options.onEvent(parsed.payload);
+              lastEventId = parsed.id;
+              if (!connected) {
+                disconnectedSince = null;
+                options.onConnection?.("connected");
+                connected = true;
+              }
             }
+            boundary = buffer.search(/\r?\n\r?\n/);
           }
-          boundary = buffer.search(/\r?\n\r?\n/);
+          if (done) {
+            break;
+          }
         }
-        if (done) {
-          break;
+      } finally {
+        try {
+          // Parsing or application callbacks can fail while the body remains
+          // open. Close this connection before starting its replacement.
+          await reader.cancel();
+        } catch {
+          // Fetch aborts and transport errors may already have errored the body.
         }
+        reader.releaseLock();
       }
     } catch (error) {
       if (options.signal.aborted) {

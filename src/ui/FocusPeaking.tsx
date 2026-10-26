@@ -4,7 +4,7 @@ import { store } from "../state/store";
 import { decodePreviewFrame, previewDimensions, type PreviewImage } from "../api/preview";
 
 import PeakingWorker from "./peaking.worker?worker&inline";
-import { fitPeakingDimensions, peakingPixels } from "./peaking";
+import { fitPeakingDimensions, PeakingProcessor } from "./peaking";
 
 function clearCanvas(canvas: HTMLCanvasElement | null): void {
   if (!canvas) {
@@ -18,6 +18,7 @@ function renderPeakingMask(
   canvas: HTMLCanvasElement,
   image: PreviewImage,
   threshold: number,
+  processor: PeakingProcessor,
 ): number {
   const sourceSize = previewDimensions(image);
   if (sourceSize.width < 3 || sourceSize.height < 3) {
@@ -26,8 +27,8 @@ function renderPeakingMask(
   }
   const { width, height } = fitPeakingDimensions(sourceSize.width, sourceSize.height);
 
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
     return 0;
@@ -36,7 +37,7 @@ function renderPeakingMask(
   context.clearRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
   const source = context.getImageData(0, 0, width, height);
-  source.data.set(peakingPixels(source.data, width, height, threshold));
+  processor.apply(source.data, width, height, threshold);
   context.putImageData(source, 0, 0);
   return 0;
 }
@@ -49,6 +50,7 @@ export function FocusPeakingOverlay({
   state: AppState;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fallbackProcessorRef = useRef<PeakingProcessor | null>(null);
   const busyRef = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const fallbackTimeRef = useRef(0);
@@ -67,7 +69,22 @@ export function FocusPeakingOverlay({
 
   async function renderInWorker(image: PreviewImage, threshold: number): Promise<ImageBitmap | null> {
     if (workerDisabledRef.current || typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") return null;
-    const bitmap = await createImageBitmap(image);
+    const sourceSize = previewDimensions(image);
+    const { width, height } = fitPeakingDimensions(sourceSize.width, sourceSize.height);
+    if (width < 3 || height < 3) return null;
+    let bitmap: ImageBitmap;
+    try {
+      // Bound the transferred bitmap as well as the worker's pixel processing.
+      bitmap = await createImageBitmap(image, {
+        resizeWidth: width,
+        resizeHeight: height,
+        resizeQuality: "low",
+      });
+    } catch {
+      // Browsers without bitmap resize support retain the canvas fallback.
+      workerDisabledRef.current = true;
+      return null;
+    }
     if (!mountedRef.current) { bitmap.close(); return null; }
     try {
       workerRef.current ??= new PeakingWorker();
@@ -168,14 +185,18 @@ export function FocusPeakingOverlay({
             const canvas = canvasRef.current;
             if (!canvas || !enabledRef.current || generation !== generationRef.current) return;
             if (mask) {
-              canvas.width = mask.width;
-              canvas.height = mask.height;
-              canvas.getContext("2d")?.drawImage(mask, 0, 0);
+              if (canvas.width !== mask.width) canvas.width = mask.width;
+              if (canvas.height !== mask.height) canvas.height = mask.height;
+              const context = canvas.getContext("2d");
+              // Transparent mask pixels must replace the previous frame's edges.
+              context?.clearRect(0, 0, canvas.width, canvas.height);
+              context?.drawImage(mask, 0, 0);
               canvas.dataset.renderer = "worker";
             } else if (performance.now() - fallbackTimeRef.current >= 100) {
               // Older browsers keep a bounded 10 Hz overlay; preview keeps its own cadence.
               fallbackTimeRef.current = performance.now();
-              renderPeakingMask(canvas, image, thresholdRef.current);
+              fallbackProcessorRef.current ??= new PeakingProcessor();
+              renderPeakingMask(canvas, image, thresholdRef.current, fallbackProcessorRef.current);
               canvas.dataset.renderer = "fallback";
             }
           } finally { mask?.close(); }
