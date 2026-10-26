@@ -40,6 +40,7 @@ export interface SessionsState {
   nextCursor: string | null;
   loading: boolean;
   loadedOnce: boolean;
+  error: VisibleError | null;
   query: string;
   filter: SessionFilter;
 }
@@ -102,9 +103,9 @@ export type Action =
   | { type: "error.cleared" }
   | { type: "sessions.pending" }
   | { type: "sessions.loaded"; payload: SessionList; append: boolean }
-  | { type: "sessions.failed" }
+  | { type: "sessions.failed"; error: VisibleError }
   | { type: "sessions.invalidated" }
-  | { type: "sessions.unavailable" }
+  | { type: "sessions.unavailable"; error: VisibleError }
   | { type: "sessions.query"; query: string }
   | { type: "sessions.filter"; filter: SessionFilter }
   | { type: "session.opened"; sessionId: string }
@@ -140,6 +141,7 @@ export const initialState: AppState = {
     nextCursor: null,
     loading: false,
     loadedOnce: false,
+    error: null,
     query: "",
     filter: "all",
   },
@@ -205,6 +207,7 @@ function invalidatedSessionsState(
     nextCursor: null,
     loading: false,
     loadedOnce,
+    error: null,
   };
 }
 
@@ -340,14 +343,18 @@ export function reduceState(state: AppState, action: Action): AppState {
           nextCursor: action.payload.next_cursor,
           loading: false,
           loadedOnce: true,
+          error: null,
         },
       };
     case "sessions.failed":
-      return { ...state, sessions: { ...state.sessions, loading: false, loadedOnce: true } };
+      return { ...state, sessions: { ...state.sessions, loading: false, error: action.error } };
     case "sessions.invalidated":
       return { ...state, sessions: invalidatedSessionsState(state.sessions, false) };
     case "sessions.unavailable":
-      return { ...state, sessions: invalidatedSessionsState(state.sessions, true) };
+      return {
+        ...state,
+        sessions: { ...invalidatedSessionsState(state.sessions, false), error: action.error },
+      };
     case "sessions.query":
       return { ...state, sessions: { ...state.sessions, query: action.query } };
     case "sessions.filter":

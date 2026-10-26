@@ -997,7 +997,7 @@ test("fixture 请求日志会脱敏网络 secret 字段", async ({ request }) =>
   expect(serialized).toContain("<redacted>");
 });
 
-test("无录制卷时设备保持在线并显示空会话列表", async ({ page, request }) => {
+test("无录制卷时设备保持在线并明确显示列表不可读取", async ({ page, request }) => {
   await request.post("/__fixture/config", { data: { sessionsVolumeUnavailable: true } });
 
   await page.goto("/");
@@ -1009,7 +1009,64 @@ test("无录制卷时设备保持在线并显示空会话列表", async ({ page,
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "开始录制" })).toBeDisabled();
   await openPanel(page, "会话台账");
-  await expect(page.getByText("暂无会话", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("session-list-error")).toContainText("录像列表读取失败");
+  await expect(page.getByText("暂无会话", { exact: true })).toHaveCount(0);
+});
+
+for (const status of [409, 503]) {
+  test(`首次列表 ${status} 失败显示错误并可重试，不误报为空`, async ({ page }) => {
+    const routePattern = /\/api\/v4\/sessions(?:\?.*)?$/;
+    await page.route(routePattern, (route) => route.fulfill({
+      status,
+      json: {
+        schema: "ylx.api-error.v2",
+        error: {
+          code: status === 409 ? "insufficient_space" : "storage_unavailable",
+          message: "录制卷暂时无法读取",
+          request_id: "962f25f5-c8f1-42cb-a598-4143a806d89f",
+          retryable: true,
+          details: {},
+        },
+      },
+    }));
+    await page.goto("/");
+    await openPanel(page, "会话台账");
+    await expect(page.getByTestId("session-list-error")).toContainText("录制卷暂时无法读取");
+    await expect(page.getByText("暂无会话", { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId("session-item")).toHaveCount(0);
+    await page.unroute(routePattern);
+    await page.getByRole("button", { name: "重试读取列表" }).click();
+    await expect(page.getByTestId("session-item").first()).toBeVisible();
+    await expect(page.getByTestId("session-list-error")).toHaveCount(0);
+  });
+}
+
+test("列表刷新失败保留上次结果并标明可能过期", async ({ page }) => {
+  await page.goto("/");
+  await openPanel(page, "会话台账");
+  await expect(page.getByTestId("session-item").first()).toBeVisible();
+  const previousCount = await page.getByTestId("session-item").count();
+  const routePattern = /\/api\/v4\/sessions(?:\?.*)?$/;
+  await page.route(routePattern, (route) => route.fulfill({
+    status: 503,
+    json: {
+      schema: "ylx.api-error.v2",
+      error: {
+        code: "storage_unavailable",
+        message: "读取失败",
+        request_id: "962f25f5-c8f1-42cb-a598-4143a806d89f",
+        retryable: true,
+        details: {},
+      },
+    },
+  }));
+  await page.getByRole("button", { name: "刷新会话", exact: true }).click();
+  await expect(page.getByTestId("session-list-error")).toContainText("上次成功读取的列表");
+  await expect(page.getByTestId("session-item")).toHaveCount(previousCount);
+  await expect(page.getByText("已到台账末尾", { exact: true })).toHaveCount(0);
+  await page.unroute(routePattern);
+  await page.getByRole("button", { name: "重试读取列表" }).click();
+  await expect(page.getByTestId("session-list-error")).toHaveCount(0);
 });
 
 test("录制名称可留空并由设备使用可读真实时间命名", async ({ page, request }) => {

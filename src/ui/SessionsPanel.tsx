@@ -54,7 +54,7 @@ export function SessionsPanel({ state }: { state: AppState }) {
     );
   }
 
-  const { items, query, filter, loading, loadedOnce, nextCursor, diagnostics } = state.sessions;
+  const { items, query, filter, loading, loadedOnce, nextCursor, diagnostics, error } = state.sessions;
   const retained = state.capture?.snapshot.retained_unsuccessful?.recording_state;
   const savedSessionId = retained?.diagnostics.some((diagnostic) => diagnostic.code === "recording_prefix_saved")
     ? retained.session_id : undefined;
@@ -119,6 +119,21 @@ export function SessionsPanel({ state }: { state: AppState }) {
       </div>
 
       <div class="panel-body">
+        {error ? (
+          <div class="discovery-diagnostic" role="alert" data-testid="session-list-error">
+            <strong>录像列表读取失败</strong>
+            <p>{error.message}</p>
+            {items.length > 0 ? <p>以下为上次成功读取的列表，可能不是最新状态。</p> : null}
+            <button
+              type="button"
+              class="panel-more"
+              disabled={loading}
+              onClick={() => void store.refreshSessions()}
+            >
+              {loading ? "正在重试" : "重试读取列表"}
+            </button>
+          </div>
+        ) : null}
         {visible.map((session) => (
           <div class="session-entry" key={session.session_id}>
             <button
@@ -173,12 +188,12 @@ export function SessionsPanel({ state }: { state: AppState }) {
           </p>
         ))}
 
-        {visible.length === 0 && loadedOnce && !loading && diagnostics.length === 0 ? (
+        {visible.length === 0 && loadedOnce && !loading && !error && diagnostics.length === 0 ? (
           <p class="panel-empty">
             {items.length === 0 ? "暂无会话" : "没有匹配当前搜索或筛选的会话"}
           </p>
         ) : null}
-        {!loadedOnce ? <p class="panel-empty">会话列表尚未加载</p> : null}
+        {!loadedOnce && !error ? <p class="panel-empty">会话列表尚未加载</p> : null}
 
         {nextCursor ? (
           <button
@@ -189,7 +204,7 @@ export function SessionsPanel({ state }: { state: AppState }) {
           >
             {loading ? "正在读取" : "加载更多"}
           </button>
-        ) : loadedOnce && items.length > 0 ? (
+        ) : loadedOnce && items.length > 0 && !error ? (
           <p class="panel-empty">已到台账末尾</p>
         ) : null}
       </div>
