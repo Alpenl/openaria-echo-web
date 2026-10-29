@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
+import { CaptureTimer } from "./CaptureTimer";
 import { formatCount, formatMiB, formatSeconds } from "./format";
 import { CalibrationIcon, CloseIcon, EditIcon, SessionsIcon } from "./icons";
 
@@ -191,6 +192,8 @@ export function CommandBar({ state }: { state: AppState }) {
             <span class="shutter-dot" aria-hidden="true" />
           </button>
           <span class="shutter-caption" aria-hidden="true">{shutterLabel}</span>
+          <CaptureTimer connected={connected} idle={deviceState === "idle" && !state.commandPending}
+            sessionId={recording ? active?.session_id ?? null : null} />
         </div>
         <button
           type="button"
