@@ -32,8 +32,8 @@ export const DEVICE_API_CONSUMER_SUPPORT = {
     {
       major: 4,
       path: "openapi/ylx-device-v4.openapi.yaml",
-      sha256: "00e71f5fc5dec89d0fba93af9bea447d92ffc79a90a2735ab8dff5214a561d65",
-      bytes: 132425,
+      sha256: "9dd9d0a4c8b04cebe5110fe81fc497dcd31358d1576fad19fda8a55d50b60696",
+      bytes: 136060,
       info_version: "4.0.0",
       server_base_path: API_ROOT,
       lifecycle: "current",
@@ -616,3 +616,33 @@ export async function getLatestPreview(signal: AbortSignal): Promise<Blob> {
   }
   return response.blob();
 }
+
+
+export interface CaptureTimerStatus {
+  schema: "ylx.capture-timer.v1";
+  settings: { enabled: boolean; duration_seconds: number };
+  active: { session_id: string; duration_seconds: number; remaining_seconds: number } | null;
+}
+
+function assertCaptureTimer(value: unknown): CaptureTimerStatus {
+  const v = value as CaptureTimerStatus;
+  const validDuration = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= 86400;
+  if (!v || v.schema !== "ylx.capture-timer.v1" || !v.settings ||
+      typeof v.settings.enabled !== "boolean" || !validDuration(v.settings.duration_seconds) ||
+      (v.active !== null && (!v.active || typeof v.active.session_id !== "string" ||
+        !validDuration(v.active.duration_seconds) || typeof v.active.remaining_seconds !== "number" ||
+        !Number.isFinite(v.active.remaining_seconds) || v.active.remaining_seconds < 0 ||
+        v.active.remaining_seconds > v.active.duration_seconds))) {
+    throw new DeviceApiError("设备定时状态无效", 502, "invalid_timer_status");
+  }
+  return v;
+}
+
+export const captureTimerApi = {
+  get: (signal?: AbortSignal) => requestJson<unknown>("/capture/timer", { signal }).then(assertCaptureTimer),
+  set: (enabled: boolean, duration_seconds: number) => requestJson<unknown>("/capture/timer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema: "ylx.capture-timer-set.v1", enabled, duration_seconds }),
+  }).then(assertCaptureTimer),
+};
