@@ -2791,3 +2791,8 @@ a:hover {
   box-sizing: border-box; color: inherit; background: #25282e; border: 1px solid #656970; border-radius: 6px; }
 .capture-timer-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
 .capture-timer-actions button { padding: 9px 14px; }
+
+.voice-volume-control { display: grid; gap: 12px; margin: 20px 0; }
+.voice-volume-control input { width: 100%; min-height: 36px; accent-color: var(--accent, #5dcbb8); }
+
+.capture-preferences { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; grid-column: 1 / -1; }

@@ -646,3 +646,25 @@ export const captureTimerApi = {
     body: JSON.stringify({ schema: "ylx.capture-timer-set.v1", enabled, duration_seconds }),
   }).then(assertCaptureTimer),
 };
+
+
+export interface VoiceStatus {
+  schema: "ylx.voice.v1";
+  enabled: boolean;
+  volume: number;
+}
+function assertVoice(value: unknown): VoiceStatus {
+  const v = value as VoiceStatus;
+  if (!v || v.schema !== "ylx.voice.v1" || typeof v.enabled !== "boolean" ||
+      !Number.isInteger(v.volume) || v.volume < 0 || v.volume > 100) {
+    throw new DeviceApiError("设备提示音状态无效", 502, "invalid_voice_status");
+  }
+  return v;
+}
+export const voiceApi = {
+  get: (signal?: AbortSignal) => requestJson<unknown>("/voice", { signal }).then(assertVoice),
+  set: (volume: number) => requestJson<unknown>("/voice", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema: "ylx.voice-set.v1", volume }),
+  }).then(assertVoice),
+};
