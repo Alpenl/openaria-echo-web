@@ -2796,3 +2796,9 @@ a:hover {
 .voice-volume-control input { width: 100%; min-height: 36px; accent-color: var(--accent, #5dcbb8); }
 
 .capture-preferences { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; grid-column: 1 / -1; }
+
+.device-clock { text-align: center; padding-bottom: 6px; }
+.device-clock > button { max-width: 100%; white-space: normal; font-size: 11px; }
+
+.bottombar { flex-wrap: wrap; row-gap: 0; }
+.device-clock { flex: 0 0 100%; min-width: 0; }

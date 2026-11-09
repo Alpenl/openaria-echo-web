@@ -420,8 +420,11 @@ export interface ListSessionsQuery {
   cursor?: string | null;
 }
 
-type ClockStatus = {
-  schema: "ylx.clock-status.v1";
+export type ClockStatus = {
+  schema: "ylx.clock-status.v1" | "ylx.clock-status.v2";
+  boot_id?: string;
+  synchronized_at_ms?: number | null;
+  age_seconds?: number | null;
   source: "ntp" | "client" | "unsynchronized";
   unix_time_ms: number;
   challenge: string | null;
@@ -430,62 +433,94 @@ type ClockStatus = {
 };
 
 function assertClockStatus(value: unknown): ClockStatus {
-  if (
-    !hasExactKeys(value, new Set([
-      "schema", "source", "unix_time_ms", "challenge", "expires_in_ms", "applied",
-    ])) ||
-    value.schema !== "ylx.clock-status.v1" ||
-    !Number.isSafeInteger(value.unix_time_ms) || Number(value.unix_time_ms) < 0 ||
-    typeof value.applied !== "boolean" ||
-    (value.applied && value.source !== "client") ||
-    !(value.source === "unsynchronized"
-      ? typeof value.challenge === "string" && /^[0-9a-f]{32}$/.test(value.challenge) &&
-        value.expires_in_ms === 5000
-      : (value.source === "ntp" || value.source === "client") &&
-        value.challenge === null && value.expires_in_ms === 0)
-  ) {
+  const v = value as ClockStatus | null;
+  const extended = v?.schema === "ylx.clock-status.v2";
+  if (!v || (!extended && v.schema !== "ylx.clock-status.v1") ||
+    !Number.isSafeInteger(v.unix_time_ms) || v.unix_time_ms < 0 ||
+    typeof v.applied !== "boolean" || !["ntp", "client", "unsynchronized"].includes(v.source) ||
+    (v.applied && v.source !== "client") ||
+    (extended || v.source === "unsynchronized"
+      ? typeof v.challenge !== "string" || !/^[0-9a-f]{32}$/.test(v.challenge) || v.expires_in_ms !== 5000
+      : v.challenge !== null || v.expires_in_ms !== 0) ||
+    (extended && (typeof v.boot_id !== "string" ||
+      (v.source === "unsynchronized"
+        ? v.synchronized_at_ms !== null || v.age_seconds !== null
+        : !Number.isSafeInteger(v.synchronized_at_ms) || Number(v.synchronized_at_ms) < 1704067200000 ||
+          !Number.isSafeInteger(v.age_seconds) || Number(v.age_seconds) < 0)))) {
     throw new DeviceApiError("设备校时响应无效", 502, "invalid_clock_status");
   }
-  return value as ClockStatus;
+  return v;
 }
 
+export type ClockView = {
+  status: ClockStatus | null; observedAt: number; error: string; pending: boolean;
+};
+let clockView: ClockView = { status: null, observedAt: 0, error: "", pending: false };
+const clockListeners = new Set<(view: ClockView) => void>();
+function publishClock(update: Partial<ClockView>) {
+  clockView = { ...clockView, ...update };
+  for (const listener of clockListeners) listener(clockView);
+}
+export const clockFeedback = {
+  current: () => clockView,
+  subscribe: (listener: (view: ClockView) => void) => {
+    clockListeners.add(listener); return () => { clockListeners.delete(listener); };
+  },
+};
 let clockRequest: Promise<ClockStatus | null> | null = null;
 
-async function synchronizeClock(): Promise<ClockStatus | null> {
-  // Join connection/visibility/record-button attempts in this tab.
-  if (clockRequest) return clockRequest;
+async function readClock(signal: AbortSignal): Promise<ClockStatus | null> {
+  let raw = await requestOptionalJson<unknown>("/clock/check", { signal });
+  if (raw === null) raw = await requestOptionalJson<unknown>("/clock", { signal });
+  return raw === null ? null : assertClockStatus(raw);
+}
+
+async function synchronizeClock(replace = false, readOnly = false): Promise<ClockStatus | null> {
+  if (clockRequest) {
+    if (replace) throw new DeviceApiError("正在校时，请稍后重试", 409, "clock_busy");
+    return clockRequest;
+  }
+  publishClock({ pending: true });
   clockRequest = (async () => {
     const controller = new AbortController();
     const timeout = globalThis.setTimeout(() => controller.abort(), 5000);
     try {
       const started = performance.now();
-      const raw = await requestOptionalJson<unknown>("/clock", { signal: controller.signal });
-      if (raw === null) return null; // Optional extension: older firmware keeps working.
-      const status = assertClockStatus(raw);
-      if (status.source !== "unsynchronized") return status;
+      const status = await readClock(controller.signal);
+      publishClock({ status, observedAt: performance.now(), error: "" });
+      if (!status || readOnly || (status.source !== "unsynchronized" && !replace)) return status;
+      if (replace && status.schema !== "ylx.clock-status.v2") {
+        throw new DeviceApiError("当前固件不支持手动重校", 409, "clock_resync_unsupported");
+      }
       if (performance.now() - started > 2000) {
-        throw new DeviceApiError("连接延迟较高，请重试校准日期", 409, "clock_challenge_expired");
+        throw new DeviceApiError("连接延迟较高，请重试校准时间", 409, "clock_challenge_expired");
       }
       const now = Date.now();
       if (now < 1704067200000 || now >= 4102444800000) {
         throw new DeviceApiError("请先校准这台手机或电脑的日期", 400, "client_clock_invalid");
       }
       const result = assertClockStatus(await requestJson<unknown>("/clock/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
         body: JSON.stringify({
-          schema: "ylx.clock-sync-request.v1",
-          challenge: status.challenge,
-          unix_time_ms: now,
+          schema: status.schema === "ylx.clock-status.v2" ? "ylx.clock-sync-request.v2" : "ylx.clock-sync-request.v1",
+          challenge: status.challenge, unix_time_ms: now,
+          ...(status.schema === "ylx.clock-status.v2" ? { replace } : {}),
         }),
       }));
-      if (result.source === "unsynchronized") {
-        throw new DeviceApiError("设备日期尚未校准，请重试", 503, "clock_sync_unavailable");
+      const verified = await readClock(controller.signal);
+      if (!verified || verified.source === "unsynchronized" ||
+          Math.abs(verified.unix_time_ms - Date.now()) > 2000 ||
+          (result.boot_id && result.boot_id !== verified.boot_id)) {
+        throw new DeviceApiError("设备时间回读不一致，请检查手机日期并重试", 409, "clock_verify_failed");
       }
-      return result;
+      publishClock({ status: verified, observedAt: performance.now(), error: "" });
+      return verified;
+    } catch (error) {
+      publishClock({ error: error instanceof DeviceApiError ? error.message : "校时连接失败，请重试" });
+      throw error;
     } finally {
       globalThis.clearTimeout(timeout);
+      publishClock({ pending: false });
     }
   })().finally(() => { clockRequest = null; });
   return clockRequest;
@@ -493,6 +528,8 @@ async function synchronizeClock(): Promise<ClockStatus | null> {
 
 export const deviceApi = Object.freeze({
   syncClock: synchronizeClock,
+  readClock: () => synchronizeClock(false, true),
+  resyncClock: () => synchronizeClock(true),
   getDevice: (signal?: AbortSignal) => requestJson<DeviceDescriptor>("/device", { signal }).then(assertSupportedDevice),
   getCaptureStatus: (signal?: AbortSignal) => requestJson<CaptureStatus>("/capture/status", { signal }).then(assertCaptureStatus),
   getCameraFocus: () => requestOptionalJson<CameraFocusStatus>("/camera/focus"),

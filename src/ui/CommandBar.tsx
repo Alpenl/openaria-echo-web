@@ -3,6 +3,7 @@ import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { CaptureTimer } from "./CaptureTimer";
+import { ClockStatus } from "./ClockStatus";
 import { VoiceVolume } from "./VoiceVolume";
 import { formatCount, formatMiB, formatSeconds } from "./format";
 import { CalibrationIcon, CloseIcon, EditIcon, SessionsIcon } from "./icons";
@@ -127,6 +128,7 @@ export function CommandBar({ state }: { state: AppState }) {
 
   return (
     <footer class="bottombar" data-active={String(Boolean(active))} data-naming={String(nameEditing)}>
+      <ClockStatus connected={connected} idle={deviceState === "idle" && !state.commandPending} />
       <form
         class="command-form"
         onSubmit={(event) => {
