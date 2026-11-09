@@ -3,6 +3,8 @@ import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
 import { store } from "../state/store";
 import { CaptureTimer } from "./CaptureTimer";
+import { ClockStatus } from "./ClockStatus";
+import { VoiceVolume } from "./VoiceVolume";
 import { formatCount, formatMiB, formatSeconds } from "./format";
 import { CalibrationIcon, CloseIcon, EditIcon, SessionsIcon } from "./icons";
 
@@ -126,6 +128,7 @@ export function CommandBar({ state }: { state: AppState }) {
 
   return (
     <footer class="bottombar" data-active={String(Boolean(active))} data-naming={String(nameEditing)}>
+      <ClockStatus connected={connected} idle={deviceState === "idle" && !state.commandPending} />
       <form
         class="command-form"
         onSubmit={(event) => {
@@ -192,8 +195,11 @@ export function CommandBar({ state }: { state: AppState }) {
             <span class="shutter-dot" aria-hidden="true" />
           </button>
           <span class="shutter-caption" aria-hidden="true">{shutterLabel}</span>
+          <div class="capture-preferences">
+          <VoiceVolume connected={connected} idle={deviceState === "idle" && !state.commandPending} />
           <CaptureTimer connected={connected} idle={deviceState === "idle" && !state.commandPending}
             sessionId={recording ? active?.session_id ?? null : null} />
+          </div>
         </div>
         <button
           type="button"

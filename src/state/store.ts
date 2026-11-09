@@ -177,6 +177,8 @@ export class EchoStore {
       this.dispatch({ type: "credentials.cleared" });
       if (capture.snapshot.device_state === "idle") {
         await this.synchronizeClock();
+      } else {
+        void deviceApi.readClock().catch(console.warn);
       }
 
       // 列表只读取录像信息；回放按需读取文件，不扫描整段录像。
