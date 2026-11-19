@@ -22,6 +22,7 @@ import {
 } from "./reducer";
 
 const SESSION_PAGE_SIZE = 25;
+const MAX_SESSION_PAGE_SIZE = 200;
 const TERMINAL_CAPTURE_RETRY_DELAYS_MS = [0, 150, 300, 600, 1000, 2000, 4000, 8000] as const;
 const SEALED_SESSION_RETRY_DELAYS_MS = [
   0, 150, 300, 600, 1000, 1500, 2500, 4000, 6000,
@@ -45,6 +46,14 @@ function wait(milliseconds: number): Promise<void> {
 
 function isSessionCatalogChanged(error: unknown): boolean {
   return error instanceof DeviceApiError && error.status === 409 && error.code === "catalog_changed";
+}
+
+function sessionCatalogChanged(): DeviceApiError {
+  return new DeviceApiError("会话目录已变化", 409, "catalog_changed");
+}
+
+function sessionEntryCount(list: Pick<SessionList, "items" | "diagnostics">): number {
+  return list.items.length + list.diagnostics.length;
 }
 
 function isSessionVolumeUnavailable(error: unknown): boolean {
@@ -262,8 +271,73 @@ export class EchoStore {
     await this.relatedRefresh;
   };
 
-  private async listSessions(cursor: string | null): Promise<SessionList> {
-    return deviceApi.listSessions({ limit: SESSION_PAGE_SIZE, cursor });
+  private async listSessions(
+    cursor: string | null,
+    limit = SESSION_PAGE_SIZE,
+  ): Promise<SessionList> {
+    return deviceApi.listSessions({ limit, cursor });
+  }
+
+  private async readSessionWindow(targetCount: number): Promise<SessionList> {
+    const current = this.state.sessions;
+    const firstPage = await this.listSessions(null);
+    if (
+      firstPage.schema === "ylx.session-list.v3" &&
+      canAppendSessionPage(current, firstPage) &&
+      (sessionEntryCount(current) >= targetCount || current.nextCursor === null)
+    ) {
+      return {
+        ...firstPage,
+        items: current.items,
+        diagnostics: current.diagnostics,
+        next_cursor: current.nextCursor,
+      };
+    }
+
+    const sessions = firstPage;
+    while (sessions.next_cursor && sessionEntryCount(sessions) < targetCount) {
+      const cursor = sessions.next_cursor;
+      const remaining = targetCount - sessionEntryCount(sessions);
+      const next = await this.listSessions(cursor, Math.min(remaining, MAX_SESSION_PAGE_SIZE));
+      if (
+        next.schema !== sessions.schema ||
+        (next.schema === "ylx.session-list.v3" &&
+          sessions.schema === "ylx.session-list.v3" &&
+          next.catalog_revision !== sessions.catalog_revision)
+      ) {
+        throw sessionCatalogChanged();
+      }
+      if (next.next_cursor && (next.next_cursor === cursor || sessionEntryCount(next) === 0)) {
+        throw new DeviceApiError("会话分页未前进", 502, "invalid_response");
+      }
+      sessions.items.push(...next.items);
+      sessions.diagnostics.push(...next.diagnostics);
+      sessions.next_cursor = next.next_cursor;
+    }
+    return sessions;
+  }
+
+  private async replaceSessionWindow(targetCount: number): Promise<void> {
+    try {
+      const sessions = await this.readSessionWindow(targetCount).catch((error) => {
+        if (!isSessionCatalogChanged(error)) {
+          throw error;
+        }
+        return this.readSessionWindow(targetCount);
+      });
+      this.dispatch({ type: "sessions.loaded", payload: sessions, append: false });
+    } catch (error) {
+      this.reportSessionError(error);
+    }
+  }
+
+  private reportSessionError(error: unknown): void {
+    if (isSessionVolumeUnavailable(error)) {
+      this.dispatch({ type: "sessions.unavailable", error: visibleError(error) });
+    } else {
+      console.warn(error);
+      this.dispatch({ type: "sessions.failed", error: visibleError(error) });
+    }
   }
 
   refreshSessions = async (): Promise<void> => {
@@ -301,17 +375,8 @@ export class EchoStore {
       do {
         this.sessionsRefreshDirty = false;
         this.dispatch({ type: "sessions.pending" });
-        try {
-          const sessions = await this.listSessions(null);
-          this.dispatch({ type: "sessions.loaded", payload: sessions, append: false });
-        } catch (error) {
-          if (isSessionVolumeUnavailable(error)) {
-            this.dispatch({ type: "sessions.unavailable", error: visibleError(error) });
-          } else {
-            console.warn(error);
-            this.dispatch({ type: "sessions.failed", error: visibleError(error) });
-          }
-        }
+        const targetCount = Math.max(SESSION_PAGE_SIZE, sessionEntryCount(this.state.sessions));
+        await this.replaceSessionWindow(targetCount);
       } while (this.sessionsRefreshDirty);
     } finally {
       this.sessionsRefresh = null;
@@ -349,26 +414,20 @@ export class EchoStore {
     if (!nextCursor || loading || this.sessionsRefresh) {
       return;
     }
+    const targetCount = sessionEntryCount(this.state.sessions) + SESSION_PAGE_SIZE;
     this.dispatch({ type: "sessions.pending" });
     this.sessionsRefresh = this.listSessions(nextCursor)
       .then((sessions) => {
         if (!canAppendSessionPage(this.state.sessions, sessions)) {
-          this.dispatch({ type: "sessions.invalidated" });
-          this.sessionsRefreshDirty = true;
-          return;
+          throw sessionCatalogChanged();
         }
         this.dispatch({ type: "sessions.loaded", payload: sessions, append: true });
       })
       .catch((error) => {
         if (isSessionCatalogChanged(error)) {
-          this.dispatch({ type: "sessions.invalidated" });
-          this.sessionsRefreshDirty = true;
-        } else if (isSessionVolumeUnavailable(error)) {
-          this.dispatch({ type: "sessions.unavailable", error: visibleError(error) });
-        } else {
-          console.warn(error);
-          this.dispatch({ type: "sessions.failed", error: visibleError(error) });
+          return this.replaceSessionWindow(targetCount);
         }
+        this.reportSessionError(error);
       })
       .finally(() => {
         this.sessionsRefresh = null;

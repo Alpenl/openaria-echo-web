@@ -326,7 +326,7 @@ test("pagination drops a mismatched catalog and restarts without a cursor", asyn
   );
 });
 
-test("catalog_changed invalidates accumulated pages before a fresh request", async () => {
+test("catalog_changed replaces old entries with a fresh catalog", async () => {
   const first = sessionSummary(
     "01989f6a-2c00-7a1b-8c2d-3e4f50617286",
     "01989f6a-2c00-7a1b-8c2d-3e4f50617287",

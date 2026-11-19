@@ -104,7 +104,6 @@ export type Action =
   | { type: "sessions.pending" }
   | { type: "sessions.loaded"; payload: SessionList; append: boolean }
   | { type: "sessions.failed"; error: VisibleError }
-  | { type: "sessions.invalidated" }
   | { type: "sessions.unavailable"; error: VisibleError }
   | { type: "sessions.query"; query: string }
   | { type: "sessions.filter"; filter: SessionFilter }
@@ -348,8 +347,6 @@ export function reduceState(state: AppState, action: Action): AppState {
       };
     case "sessions.failed":
       return { ...state, sessions: { ...state.sessions, loading: false, error: action.error } };
-    case "sessions.invalidated":
-      return { ...state, sessions: invalidatedSessionsState(state.sessions, false) };
     case "sessions.unavailable":
       return {
         ...state,

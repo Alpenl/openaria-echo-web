@@ -304,6 +304,7 @@ export function SessionDetail({ state, requestDelete = false }: {
   const hasManifestDigest =
     typeof manifestSha256 === "string" && /^[0-9a-f]{64}$/i.test(manifestSha256);
   const deletionReady = deletionSupported && detail.sealed && hasManifestDigest && !deletePending;
+  const sourceMissingFrames = detail.capture_audit?.camera.source_missing_frames ?? 0;
 
   const confirmDelete = async () => {
     if (!deletionReady || manifestSha256 === null) {
@@ -340,7 +341,8 @@ export function SessionDetail({ state, requestDelete = false }: {
       <div class="panel-body">
         <section class="detail-section">
           <dl class="facts">
-            <div><dt>状态</dt><dd>{detail.sealed ? "已保存" : "保存未完成"}</dd></div>
+            <div><dt>状态</dt><dd>{detail.sealed ? "已保存" : "保存未完成"}
+              {sourceMissingFrames > 0 ? " · 有源帧缺口" : ""}</dd></div>
             <div><dt>保存时间</dt><dd>{formatClock(detail.sealed_at)}</dd></div>
           </dl>
         </section>
@@ -353,6 +355,7 @@ export function SessionDetail({ state, requestDelete = false }: {
                 {detail.video?.encoding?.bitrate_kbps ? ` · 每眼 ${detail.video.encoding.bitrate_kbps / 1024}M` : ""}</dd></div>
               <div><dt>实际 / 标称帧率</dt><dd>{detail.capture_audit.camera.actual_fps?.toFixed(3) ?? "--"} / {detail.capture_audit.camera.nominal_fps} fps</dd></div>
               <div><dt>最大帧间隔</dt><dd>{(detail.capture_audit.camera.max_interval_ns / 1e6).toFixed(2)} ms</dd></div>
+              {sourceMissingFrames > 0 ? <div><dt>源序号缺口</dt><dd>{sourceMissingFrames} 个</dd></div> : null}
               <div><dt>IMU 实际交付</dt><dd>{detail.capture_audit.imu.delivered_slots_hz?.toFixed(1) ?? "--"} 样本槽/秒</dd></div>
               <div><dt>相机—IMU 计数器核对</dt><dd>{detail.capture_audit.camera.counter_matched_frames} / {detail.capture_audit.camera.frame_count} 帧</dd></div>
               <div><dt>标称时间轴偏差</dt><dd>{(detail.capture_audit.camera.nominal_timeline_error_seconds * 1000).toFixed(2)} ms</dd></div>
