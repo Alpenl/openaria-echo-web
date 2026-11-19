@@ -272,6 +272,7 @@ export interface SessionDetail {
       max_interval_ns: number;
       counter_matched_frames: number;
       frame_count: number;
+      source_missing_frames?: number;
       nominal_timeline_error_seconds: number;
     };
     imu: { delivered_slots_hz: number | null; independent_adc_timestamps: boolean };

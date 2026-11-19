@@ -106,7 +106,7 @@ export function SessionsPanel({ state }: { state: AppState }) {
             </button>
           ))}
           <span class="chip" aria-hidden="true" style="border-color:transparent;color:var(--ink-3)">
-            已载入 {items.length}
+            {loadedOnce ? `已载入 ${items.length}` : null}
           </span>
         </div>
       </div>
@@ -181,7 +181,7 @@ export function SessionsPanel({ state }: { state: AppState }) {
             {items.length === 0 ? "暂无会话" : "没有匹配当前搜索或筛选的会话"}
           </p>
         ) : null}
-        {!loadedOnce && !error ? <p class="panel-empty">会话列表尚未加载</p> : null}
+        {!loadedOnce && !error ? <p class="panel-empty" role="status">正在读取录制列表</p> : null}
 
         {nextCursor ? (
           <button

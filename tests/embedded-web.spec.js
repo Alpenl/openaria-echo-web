@@ -431,7 +431,8 @@ test("慢会话清单不阻塞权威状态、事件流和录制准入", async ({
   await expect(page.locator(".connection")).toHaveText("已连接");
   await expect(page.getByRole("button", { name: "开始录制" })).toBeEnabled();
   await openPanel(page, "会话台账");
-  await expect(page.getByText("会话列表尚未加载", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "正在读取录制列表" })).toBeVisible();
+  await expect(page.getByText("已载入 0", { exact: true })).toHaveCount(0);
 });
 
 test("网页可以调整相机焦距并同步到权威快照", async ({ page, request }) => {
@@ -2544,4 +2545,118 @@ test("旧录像没有校验结果也能直接回放下载且不显示校验状�
   await expect(detail.locator("a.download").first()).toHaveAttribute("href", /\/artifacts\//);
   await expect(detail.getByTestId("replay-left")).toBeVisible();
   await expect(detail.getByText(/校验|消费方判断|生产方声明/)).toHaveCount(0);
+});
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {import("@playwright/test").APIRequestContext} request
+ */
+async function routePagedRecordings(page, request) {
+  const original = await (await request.get("/api/v4/sessions?limit=25")).json();
+  const summary = original.items[0];
+  const entries = Array.from({ length: 78 }, (_, index) => ({
+    ...summary,
+    session_id: `01989f6a-2c00-7a1b-8c2d-${String(index + 1).padStart(12, "0")}`,
+    display_name: `分页录制 ${index + 1}`,
+    verification: null,
+  }));
+  let revision = 1;
+  /** @type {(string | null)[]} */
+  const requests = [];
+  await page.route(/\/api\/v4\/sessions\?/, async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    const cursor = query.get("cursor");
+    const limit = Number(query.get("limit"));
+    const revisionKey = `sha256:${String(revision).repeat(64)}`;
+    requests.push(cursor);
+    if (cursor && !cursor.startsWith(`${revision}:`)) {
+      await route.fulfill({
+        status: 409,
+        json: {
+          schema: "ylx.api-error.v2",
+          error: {
+            code: "catalog_changed",
+            message: "会话目录已变化",
+            request_id: "962f25f5-c8f1-42cb-a598-4143a806d89f",
+            retryable: true,
+            details: { catalog_revision: revisionKey },
+          },
+        },
+      });
+      return;
+    }
+    const offset = cursor ? Number(cursor.split(":")[1]) : 0;
+    await route.fulfill({
+      json: {
+        schema: "ylx.session-list.v3",
+        catalog_revision: revisionKey,
+        items: entries.slice(offset, offset + limit),
+        diagnostics: [],
+        next_cursor: offset + limit < entries.length ? `${revision}:${offset + limit}` : null,
+      },
+    });
+  });
+  return {
+    requests,
+    addRecording: () => {
+      entries.unshift({
+        ...summary,
+        display_name: "新封存录像",
+        session_id: "01989f6a-2c00-7a1b-8c2d-000000000100",
+        verification: null,
+      });
+      revision++;
+    },
+  };
+}
+
+test("后台刷新保留已加载的录制页面", async ({ page, request }) => {
+  const catalog = await routePagedRecordings(page, request);
+  await page.clock.install();
+  await page.goto("/");
+  const panel = await openPanel(page, "会话台账");
+  const items = panel.getByTestId("session-item");
+  const more = panel.getByRole("button", { name: "加载更多" });
+  await expect(items).toHaveCount(25);
+  await more.click();
+  await expect(items).toHaveCount(50);
+  const before = catalog.requests.length;
+  await page.clock.runFor(5_100);
+  await expect.poll(() => catalog.requests.length).toBeGreaterThan(before);
+  await expect(more).toBeEnabled();
+  await expect(items).toHaveCount(50);
+  expect(catalog.requests.slice(before)).toEqual([null]);
+  await more.click();
+  await expect(items).toHaveCount(75);
+  await more.click();
+  await expect(items).toHaveCount(78);
+  await expect(more).toHaveCount(0);
+  await expect(items.last()).toContainText("分页录制 78");
+  catalog.addRecording();
+  await panel.getByRole("button", { name: "刷新会话" }).click();
+  await expect(items.first()).toContainText("新封存录像");
+  await expect(items).toHaveCount(78);
+  await more.click();
+  await expect(items).toHaveCount(79);
+  await expect(items.last()).toContainText("分页录制 78");
+  await expect(more).toHaveCount(0);
+});
+
+test("加载更多遇到目录换版仍保留已加载深度", async ({ page, request }) => {
+  const catalog = await routePagedRecordings(page, request);
+  await page.goto("/");
+  const panel = await openPanel(page, "会话台账");
+  const items = panel.getByTestId("session-item");
+  const more = panel.getByRole("button", { name: "加载更多" });
+  await expect(items).toHaveCount(25);
+  await more.click();
+  await expect(items).toHaveCount(50);
+  catalog.addRecording();
+  await more.click();
+  await expect(items).toHaveCount(75);
+  await expect(items.first()).toContainText("新封存录像");
+  await more.click();
+  await expect(items).toHaveCount(79);
+  await expect(items.last()).toContainText("分页录制 78");
+  await expect(more).toHaveCount(0);
 });
