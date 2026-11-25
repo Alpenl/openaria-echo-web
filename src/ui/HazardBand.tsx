@@ -31,6 +31,7 @@ export function HazardBand({ state }: { state: AppState }) {
         {retained.recording_state.session_id}
       </code>
       <span class="tag">{retained.recording_state.display_name}</span>
+      <span>这是上次录制结果；当前能否开始请查看录制按钮旁的提示。</span>
     </section>
   );
 }
