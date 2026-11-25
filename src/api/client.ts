@@ -705,3 +705,24 @@ export const voiceApi = {
     body: JSON.stringify({ schema: "ylx.voice-set.v1", volume }),
   }).then(assertVoice),
 };
+
+
+export interface CaptureReadiness {
+  schema: "ylx.capture-readiness.v1";
+  allowed: boolean;
+  code: string;
+  message: string;
+  storage: Record<"recording" | "system" | "backing", { available_bytes: number; required_bytes: number } | null>;
+}
+
+export async function getCaptureReadiness(signal?: AbortSignal): Promise<CaptureReadiness> {
+  const v = await requestJson<CaptureReadiness>("/capture/readiness", { signal });
+  if (!v || v.schema !== "ylx.capture-readiness.v1" || typeof v.allowed !== "boolean" ||
+      typeof v.code !== "string" || typeof v.message !== "string" || !v.message ||
+      v.allowed !== (v.code === "ready") || !v.storage ||
+      !["recording", "system", "backing"].every(k => {
+        const b = v.storage[k as keyof CaptureReadiness["storage"]];
+        return b === null || (b && [b.available_bytes, b.required_bytes].every(n => Number.isSafeInteger(n) && n >= 0));
+      })) throw new DeviceApiError("录制准入状态无效", 502, "invalid_readiness");
+  return v;
+}

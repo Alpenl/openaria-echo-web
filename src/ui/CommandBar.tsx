@@ -1,3 +1,4 @@
+import { useCaptureReadiness, ReadinessNotice } from "./CaptureReadiness";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { CalibrationCaptureDisabledReason } from "../api/types";
 import type { AppState } from "../state/reducer";
@@ -91,13 +92,14 @@ export function CommandBar({ state }: { state: AppState }) {
     active?.session_id ?? null,
     connected && recording,
   );
-  const captureAllowed = state.device?.capabilities.capture !== false;
+  const readiness = useCaptureReadiness(connected);
+  const captureAllowed = readiness.status?.allowed ?? (state.device?.capabilities.capture !== false);
   const cameraConnected =
     (snapshot?.runtime.camera ?? state.device?.runtime.camera)?.state === "connected";
 
   // 名称可选；空值由设备按本地真实时间生成。快门只按权威状态和链路启停。
   // 卷不可写就不准入：录制准入在创建 session 之前判断，不靠事后失败收敛。
-  const writable = state.device?.storage.writable === true;
+  const writable = readiness.status?.allowed ?? (state.device?.storage.writable === true);
   const canStart =
     Boolean(snapshot) &&
     connected &&
@@ -129,6 +131,7 @@ export function CommandBar({ state }: { state: AppState }) {
   return (
     <footer class="bottombar" data-active={String(Boolean(active))} data-naming={String(nameEditing)}>
       <ClockStatus connected={connected} idle={deviceState === "idle" && !state.commandPending} />
+      <ReadinessNotice status={readiness.status} error={readiness.error} idle={deviceState === "idle"} />
       <form
         class="command-form"
         onSubmit={(event) => {

@@ -2802,3 +2802,6 @@ a:hover {
 
 .bottombar { flex-wrap: wrap; row-gap: 0; }
 .device-clock { flex: 0 0 100%; min-width: 0; }
+.capture-readiness { flex: 0 0 100%; min-width: 0; display: flex; flex-wrap: wrap;
+  justify-content: center; gap: 3px 12px; padding-bottom: 6px; font-size: 11px;
+  color: var(--text-muted); }
